@@ -1,40 +1,40 @@
 # ==========================================
-# Frontend Specific (/frontend)
+# Frontend Specific (/src/frontend)
 # ==========================================
-/frontend/node_modules/
-/frontend/dist/
-/frontend/dist-ssr/
-/frontend/build/
-/frontend/.env
-/frontend/.env.local
-/frontend/.env.*.local
-/frontend/.env.development
-/frontend/.env.test
-/frontend/.env.production
-/frontend/npm-debug.log*
-/frontend/yarn-debug.log*
-/frontend/yarn-error.log*
-/frontend/pnpm-debug.log*
-/frontend/.eslintcache
+/src/frontend/node_modules/
+/src/frontend/dist/
+/src/frontend/dist-ssr/
+/src/frontend/build/
+/src/frontend/.env
+/src/frontend/.env.local
+/src/frontend/.env.*.local
+/src/frontend/.env.development
+/src/frontend/.env.test
+/src/frontend/.env.production
+/src/frontend/npm-debug.log*
+/src/frontend/yarn-debug.log*
+/src/frontend/yarn-error.log*
+/src/frontend/pnpm-debug.log*
+/src/frontend/.eslintcache
 
 # ==========================================
-# Backend Specific (/backend)
+# Backend Specific (/src/backend)
 # ==========================================
-/backend/node_modules/
-/backend/dist/
-/backend/build/
-/backend/.env
-/backend/.env.local
-/backend/.env.*.local
-/backend/.env.development
-/backend/.env.test
-/backend/.env.production
-/backend/logs/
-/backend/*.log
-/backend/npm-debug.log*
-/backend/yarn-debug.log*
-/backend/yarn-error.log*
-/backend/pnpm-debug.log*
+/src/backend/node_modules/
+/src/backend/dist/
+/src/backend/build/
+/src/backend/.env
+/src/backend/.env.local
+/src/backend/.env.*.local
+/src/backend/.env.development
+/src/backend/.env.test
+/src/backend/.env.production
+/src/backend/logs/
+/src/backend/*.log
+/src/backend/npm-debug.log*
+/src/backend/yarn-debug.log*
+/src/backend/yarn-error.log*
+/src/backend/pnpm-debug.log*
 
 # ==========================================
 # General / Root & Global Fallbacks

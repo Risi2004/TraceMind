@@ -1,0 +1,18 @@
+{
+  "name": "tracemind-monorepo",
+  "version": "1.0.0",
+  "description": "TraceMind - AI Innovation Challenge Fullstack Application",
+  "private": true,
+  "workspaces": [
+    "src/frontend",
+    "src/backend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --prefix src/backend run dev",
+    "dev:frontend": "npm --prefix src/frontend run dev",
+    "start:backend": "npm --prefix src/backend start",
+    "build:frontend": "npm --prefix src/frontend run build",
+    "lint:frontend": "npm --prefix src/frontend run lint",
+    "install:all": "npm install --prefix src/backend && npm install --prefix src/frontend"
+  }
+}
