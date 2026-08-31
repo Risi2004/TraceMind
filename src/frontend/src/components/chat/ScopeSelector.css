@@ -1,0 +1,142 @@
+.scope-selector-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.scope-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-slate-200);
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+  max-width: 280px;
+}
+
+.scope-selector-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: var(--color-white);
+}
+
+.scope-selector-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--color-blue-500);
+  color: var(--color-white);
+}
+
+.scope-icon {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.scope-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope-chevron {
+  color: var(--color-slate-400);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.scope-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Menu */
+.scope-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 300px;
+  background: #0e172e;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(37, 99, 235, 0.2);
+  padding: 0.6rem;
+  z-index: 50;
+  max-height: 380px;
+  overflow-y: auto;
+  animation: fadeInDown 0.15s ease-out;
+}
+
+.scope-dropdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.scope-dropdown-section:last-child {
+  margin-bottom: 0;
+}
+
+.scope-section-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-slate-500);
+  padding: 0.35rem 0.5rem 0.2rem 0.5rem;
+}
+
+.scope-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.45rem;
+  color: var(--color-slate-300);
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.scope-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-white);
+}
+
+.scope-menu-item.selected {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+.item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-count,
+.item-pages {
+  font-size: 0.6875rem;
+  color: var(--color-slate-500);
+}
+
+.check-icon {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

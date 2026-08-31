@@ -1,0 +1,122 @@
+.signout-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  padding: 1rem;
+  animation: signoutFadeIn 0.2s ease-out;
+}
+
+@keyframes signoutFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.signout-modal-card {
+  background: #0d152a;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  width: 100%;
+  max-width: 420px;
+  padding: 1.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 30px rgba(239, 68, 68, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: signoutScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes signoutScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.signout-icon-badge {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.signout-icon-badge .alert-icon {
+  color: #f87171;
+}
+
+.signout-title {
+  font-size: 1.1875rem;
+  font-weight: 700;
+  color: var(--color-white);
+  margin-bottom: 0.5rem;
+}
+
+.signout-description {
+  font-size: 0.875rem;
+  color: var(--color-slate-400);
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.signout-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.btn-signout-cancel {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-slate-300);
+  padding: 0.65rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-signout-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--color-white);
+}
+
+.btn-signout-confirm {
+  flex: 1;
+  background: #dc2626;
+  border: 1px solid #ef4444;
+  color: var(--color-white);
+  padding: 0.65rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
+  transition: all var(--transition-fast);
+}
+
+.btn-signout-confirm:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
