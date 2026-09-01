@@ -1,8 +1,15 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import connectDB from './config/db.js';
+import authRoutes from './routes/auth.routes.js';
+import { errorHandler } from './middleware/error.middleware.js';
 
+// Load environment variables
 dotenv.config();
+
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -32,25 +39,33 @@ app.get('/api', (req, res) => {
     name: 'TraceMind API',
     version: '1.0.0',
     description: 'TraceMind AI Innovation Challenge Backend Service',
+    endpoints: {
+      health: 'GET /api/health',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        me: 'GET /api/auth/me',
+        profile: 'PUT /api/auth/profile',
+        changePassword: 'PUT /api/auth/change-password',
+      },
+    },
   });
 });
+
+// Mount Routes
+app.use('/api/auth', authRoutes);
 
 // 404 Handler
 app.use((req, res) => {
   res.status(404).json({
+    success: false,
     error: 'Not Found',
     message: `Cannot ${req.method} ${req.originalUrl}`,
   });
 });
 
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('[ServerError]', err);
-  res.status(err.status || 500).json({
-    error: 'Internal Server Error',
-    message: err.message || 'An unexpected error occurred',
-  });
-});
+// Centralized Global Error Handler
+app.use(errorHandler);
 
 // Start Server
 app.listen(PORT, () => {

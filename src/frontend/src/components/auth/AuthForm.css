@@ -175,24 +175,34 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
 }
 
-.auth-link {
+.auth-link,
+.auth-link-button {
   color: var(--color-blue-400);
   font-weight: 500;
   transition: color var(--transition-fast);
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-decoration: none;
 }
 
-.auth-link:hover {
+.auth-link:hover,
+.auth-link-button:hover {
   color: var(--color-blue-300);
   text-decoration: underline;
 }
 
 /* Primary Submit Button */
 .btn-auth-submit {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.65rem;
   width: 100%;
+  min-height: 2.85rem;
   background: var(--gradient-primary);
   color: var(--color-white);
   padding: 0.8rem 1.5rem;
@@ -203,6 +213,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   transition: all var(--transition-fast);
   margin-top: 0.5rem;
+  overflow: hidden;
 }
 
 .btn-auth-submit:hover:not(:disabled) {
@@ -211,7 +222,45 @@
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
 }
 
-.btn-auth-submit:disabled {
+.btn-auth-submit.is-loading {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  cursor: wait;
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.5);
+  opacity: 1;
+}
+
+.btn-auth-submit.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  animation: btnShimmer 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes btnShimmer {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(50%); }
+}
+
+.btn-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: btnSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes btnSpin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-auth-submit:disabled:not(.is-loading) {
   opacity: 0.65;
   cursor: not-allowed;
 }
@@ -298,6 +347,23 @@
   font-weight: 500;
   animation: fadeIn 0.2s ease-out;
 }
+
+/* Error Banner */
+.auth-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  padding: 0.75rem 1rem;
+  border-radius: 0.65rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-4px); }

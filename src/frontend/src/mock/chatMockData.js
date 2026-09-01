@@ -189,10 +189,9 @@ export const INITIAL_CHAT_CONVERSATION = [
 export const MOCK_USER_PROFILE = {
   fullName: 'Alex Morgan',
   email: 'alex.morgan@tracemind.ai',
-  role: 'Enterprise Administrator',
-  plan: 'TraceMind Pro',
+  role: 'Administrator',
   initials: 'AM',
-  department: 'Data Intelligence & Security',
   joinedDate: 'January 2025'
 };
+
 
