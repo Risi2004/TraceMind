@@ -15,6 +15,7 @@ import {
   PlusIcon,
   SettingsIcon
 } from '../components/common/Icons';
+import { useAuth } from '../context/useAuth';
 import {
   INITIAL_CHAT_CONVERSATION,
   MOCK_INVESTIGATION_STEPS,
@@ -25,15 +26,23 @@ import {
 import './ChatDashboard.css';
 
 export const ChatDashboard = ({ onNavigate }) => {
+  const { user: authUser, logout, updateProfile, changePassword, deleteAccount } = useAuth();
+
   // Sidebar states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' | 'settings'
 
   // User Profile state
-  const [user, setUser] = useState(MOCK_USER_PROFILE);
+  const currentUser = authUser || MOCK_USER_PROFILE;
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [signOutModalOpen, setSignOutModalOpen] = useState(false);
+
+  // Handle account deletion
+  const handleDeleteAccount = async (password) => {
+    await deleteAccount(password);
+    onNavigate('/');
+  };
 
   // Settings state with interactive controls
   const [settings, setSettings] = useState({
@@ -73,6 +82,13 @@ export const ChatDashboard = ({ onNavigate }) => {
   const handleClearHistory = () => {
     setMessages([]);
     setIsLoading(false);
+  };
+
+  // Handle sign out
+  const handleConfirmSignOut = () => {
+    logout();
+    setSignOutModalOpen(false);
+    onNavigate('/login');
   };
 
   // Scope label helper
@@ -186,7 +202,7 @@ Every assertion above is directly traceable to the cited document coordinates be
         onNewChat={handleNewChat}
         onSelectHistory={handleSelectHistory}
         onNavigate={onNavigate}
-        user={user}
+        user={currentUser}
         onOpenProfile={() => setProfileModalOpen(true)}
         onOpenSignOut={() => setSignOutModalOpen(true)}
       />
@@ -332,17 +348,19 @@ Every assertion above is directly traceable to the cited document coordinates be
 
       {/* 5. Profile Modal Dialog */}
       <ProfileModal
-        user={user}
+        user={currentUser}
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
-        onUpdateUser={setUser}
+        onUpdateUser={updateProfile}
+        onChangePassword={changePassword}
+        onDeleteAccount={handleDeleteAccount}
       />
 
       {/* 6. Sign Out Confirmation Dialog */}
       <SignOutConfirmModal
         isOpen={signOutModalOpen}
         onClose={() => setSignOutModalOpen(false)}
-        onConfirmSignOut={() => onNavigate('/login')}
+        onConfirmSignOut={handleConfirmSignOut}
       />
     </div>
   );

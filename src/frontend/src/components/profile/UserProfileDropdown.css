@@ -71,19 +71,6 @@
   text-overflow: ellipsis;
 }
 
-.dropdown-plan-badge {
-  display: inline-block;
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  font-size: 0.625rem;
-  font-weight: 700;
-  padding: 0.05rem 0.4rem;
-  border-radius: 9999px;
-  width: fit-content;
-  margin-top: 0.2rem;
-}
-
 /* Divider */
 .dropdown-divider {
   height: 1px;

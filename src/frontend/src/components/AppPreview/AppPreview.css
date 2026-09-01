@@ -189,9 +189,13 @@
   color: var(--color-slate-200);
 }
 
-.user-plan {
+.user-email-preview {
   font-size: 0.625rem;
   color: var(--color-slate-400);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 120px;
 }
 
 /* Main Chat Panel */

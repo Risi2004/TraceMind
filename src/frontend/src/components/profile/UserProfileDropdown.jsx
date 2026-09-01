@@ -52,7 +52,6 @@ export const UserProfileDropdown = ({
         <div className="dropdown-user-info">
           <span className="dropdown-user-name">{user.fullName}</span>
           <span className="dropdown-user-email">{user.email}</span>
-          <span className="dropdown-plan-badge">{user.plan}</span>
         </div>
       </div>
 

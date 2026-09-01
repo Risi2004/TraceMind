@@ -165,7 +165,7 @@ export const ChatSidebar = ({
             {!collapsed && (
               <div className="user-details">
                 <span className="user-name">{user.fullName}</span>
-                <span className="user-tier">{user.plan}</span>
+                <span className="user-email-subtitle" title={user.email}>{user.email}</span>
               </div>
             )}
           </button>

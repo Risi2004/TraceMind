@@ -283,9 +283,13 @@
   overflow: hidden;
 }
 
-.user-tier {
-  font-size: 0.6875rem;
+.user-email-subtitle {
+  font-size: 0.7rem;
   color: var(--color-slate-400);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 130px;
 }
 
 /* Visibility Utilities */

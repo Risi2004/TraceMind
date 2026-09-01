@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { AuthLayout } from '../components/auth/AuthLayout';
 import { InputField } from '../components/auth/InputField';
 import { PasswordField } from '../components/auth/PasswordField';
-import { UserIcon, MailIcon, GoogleIcon, CheckCircleIcon } from '../components/common/Icons';
+import { UserIcon, MailIcon, GoogleIcon, CheckCircleIcon, AlertCircleIcon } from '../components/common/Icons';
+import { useAuth } from '../context/useAuth';
 import '../components/auth/AuthForm.css';
 
 export const SignUpPage = ({ onNavigate }) => {
+  const { register } = useAuth();
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -15,6 +17,7 @@ export const SignUpPage = ({ onNavigate }) => {
   });
 
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
 
@@ -54,6 +57,7 @@ export const SignUpPage = ({ onNavigate }) => {
     const { name, value, type, checked } = e.target;
     const fieldValue = type === 'checkbox' ? checked : value;
     setFormData(prev => ({ ...prev, [name]: fieldValue }));
+    setServerError('');
 
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
@@ -69,8 +73,9 @@ export const SignUpPage = ({ onNavigate }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setServerError('');
     const newErrors = {};
 
     const nameError = validateField('fullName', formData.fullName);
@@ -92,11 +97,23 @@ export const SignUpPage = ({ onNavigate }) => {
 
     if (Object.keys(newErrors).length === 0) {
       setIsSubmitting(true);
-      // Simulated frontend-only signup action
-      setTimeout(() => {
-        setIsSubmitting(false);
+      try {
+        await register({
+          name: formData.fullName.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+        });
+
         setSignUpSuccess(true);
-      }, 700);
+        sessionStorage.setItem('tracemind_pending_email', formData.email.trim());
+        setTimeout(() => {
+          onNavigate(`/verify-otp?email=${encodeURIComponent(formData.email.trim())}`);
+        }, 800);
+      } catch (err) {
+        setServerError(err.message || 'Failed to create account. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -109,18 +126,18 @@ export const SignUpPage = ({ onNavigate }) => {
       {signUpSuccess ? (
         <div className="auth-success-banner">
           <CheckCircleIcon size={20} />
-          <span>Account created successfully! Redirecting to sign in...</span>
-          <button
-            type="button"
-            className="btn-auth-submit"
-            style={{ marginTop: '1rem' }}
-            onClick={() => onNavigate('/login')}
-          >
-            Go to Sign In
-          </button>
+          <span>Account created successfully! Redirecting to workspace...</span>
         </div>
       ) : (
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
+          {/* Server Error Alert Banner */}
+          {serverError && (
+            <div className="auth-error-banner" role="alert">
+              <AlertCircleIcon size={16} />
+              <span>{serverError}</span>
+            </div>
+          )}
+
           {/* Full Name */}
           <InputField
             id="fullName"
@@ -189,7 +206,7 @@ export const SignUpPage = ({ onNavigate }) => {
                 className="auth-checkbox"
               />
               <span>
-                I agree to the <a href="#" onClick={(e) => { e.preventDefault(); alert("Terms of Service preview."); }} className="auth-link">Terms of Service</a> and <a href="#" onClick={(e) => { e.preventDefault(); alert("Privacy Policy preview."); }} className="auth-link">Privacy Policy</a>
+                I agree to the <a href="#" onClick={(e) => { e.preventDefault(); alert("TraceMind Terms of Service apply to enterprise document processing."); }} className="auth-link">Terms of Service</a> and <a href="#" onClick={(e) => { e.preventDefault(); alert("TraceMind Privacy Policy guarantees cryptographic data isolation."); }} className="auth-link">Privacy Policy</a>
               </span>
             </label>
             {errors.agreeTerms && (
@@ -202,10 +219,18 @@ export const SignUpPage = ({ onNavigate }) => {
           {/* Primary Create Account Button */}
           <button
             type="submit"
-            className="btn-auth-submit"
+            className={`btn-auth-submit ${isSubmitting ? 'is-loading' : ''}`}
             disabled={isSubmitting}
+            aria-busy={isSubmitting}
           >
-            {isSubmitting ? 'Creating Account...' : 'Create Account'}
+            {isSubmitting ? (
+              <>
+                <span className="btn-spinner" aria-hidden="true" />
+                <span>Creating Account...</span>
+              </>
+            ) : (
+              <span>Create Account</span>
+            )}
           </button>
 
           {/* Divider */}
@@ -217,7 +242,7 @@ export const SignUpPage = ({ onNavigate }) => {
           <button
             type="button"
             className="btn-google-auth"
-            onClick={() => alert("Google OAuth will be configured with backend authentication.")}
+            onClick={() => alert("Google OAuth requires OAuth client ID configuration in environment.")}
           >
             <GoogleIcon size={18} />
             <span>Sign up with Google</span>

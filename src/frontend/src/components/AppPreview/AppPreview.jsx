@@ -78,10 +78,10 @@ export const AppPreview = ({ onNavigate = () => {} }) => {
 
           <div className="sidebar-footer">
             <div className="user-profile-preview">
-              <div className="avatar">TM</div>
+              <div className="avatar">AM</div>
               <div className="user-info">
-                <span className="user-name">TraceMind Pro</span>
-                <span className="user-plan">Enterprise Plan</span>
+                <span className="user-name">Alex Morgan</span>
+                <span className="user-email-preview">alex.morgan@tracemind.ai</span>
               </div>
             </div>
           </div>
