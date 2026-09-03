@@ -2,12 +2,14 @@ import mongoose from 'mongoose';
 import AdmZip from 'adm-zip';
 import path from 'path';
 import Document from '../models/Document.js';
+import Chunk from '../models/Chunk.js';
 import {
   uploadBufferToR2,
   getPresignedR2ViewUrl,
   deleteFileFromR2,
   getLocalFallbackBuffer,
 } from '../services/r2.service.js';
+import { processDocumentForRag } from '../services/ingestion.service.js';
 
 // Allowed file extensions
 const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt', 'md', 'markdown'];
@@ -42,6 +44,7 @@ export const uploadDocuments = async (req, res) => {
 
     const savedDocuments = [];
     const errors = [];
+    const ragProcessingQueue = [];
 
     // Process each uploaded file
     for (const file of req.files) {
@@ -123,7 +126,7 @@ export const uploadDocuments = async (req, res) => {
               },
             });
 
-            // Save Document Record in MongoDB
+            // Save Document Record in MongoDB (starts in 'uploaded' state)
             const docRecord = await Document.create({
               _id: docId,
               userId,
@@ -144,6 +147,15 @@ export const uploadDocuments = async (req, res) => {
 
             savedDocuments.push(docRecord);
             extractedCount++;
+
+            // Enqueue for async RAG processing
+            ragProcessingQueue.push({
+              documentId: docId,
+              userId,
+              buffer: entryData,
+              filename: cleanEntryName,
+              fileType,
+            });
           }
 
           if (extractedCount === 0) {
@@ -181,7 +193,7 @@ export const uploadDocuments = async (req, res) => {
             },
           });
 
-          // Save Document Record in MongoDB
+          // Save Document Record in MongoDB (starts in 'uploaded' state)
           const docRecord = await Document.create({
             _id: docId,
             userId,
@@ -200,6 +212,15 @@ export const uploadDocuments = async (req, res) => {
           });
 
           savedDocuments.push(docRecord);
+
+          // Enqueue for async RAG processing
+          ragProcessingQueue.push({
+            documentId: docId,
+            userId,
+            buffer: file.buffer,
+            filename: cleanFilename,
+            fileType,
+          });
         } catch (uploadErr) {
           console.error(`Upload error for ${originalName}:`, uploadErr);
           errors.push({
@@ -223,9 +244,22 @@ export const uploadDocuments = async (req, res) => {
       });
     }
 
+    // Trigger async RAG processing pipeline for all uploaded documents in background
+    if (ragProcessingQueue.length > 0) {
+      (async () => {
+        for (const item of ragProcessingQueue) {
+          try {
+            await processDocumentForRag(item);
+          } catch (ragErr) {
+            console.error(`Background RAG processing failed for ${item.filename}:`, ragErr);
+          }
+        }
+      })();
+    }
+
     return res.status(201).json({
       success: true,
-      message: `${savedDocuments.length} document${savedDocuments.length > 1 ? 's' : ''} stored securely in Cloudflare R2.`,
+      message: `${savedDocuments.length} document${savedDocuments.length > 1 ? 's' : ''} stored securely in Cloudflare R2 and submitted for RAG indexing.`,
       documents: savedDocuments,
       errors: errors.length > 0 ? errors : undefined,
     });
@@ -332,7 +366,7 @@ export const streamLocalDocument = async (req, res) => {
 };
 
 /**
- * Delete a document from both Cloudflare R2 and MongoDB
+ * Delete a document from Cloudflare R2, MongoDB Document collection, and MongoDB Chunk collection
  * DELETE /api/documents/:id
  */
 export const deleteDocument = async (req, res) => {
@@ -352,12 +386,15 @@ export const deleteDocument = async (req, res) => {
     // 1. Delete from Cloudflare R2
     await deleteFileFromR2({ key: document.r2Key });
 
-    // 2. Delete from MongoDB
+    // 2. Cascade delete all vector chunks associated with this document
+    await Chunk.deleteMany({ documentId: id });
+
+    // 3. Delete from MongoDB Document collection
     await document.deleteOne();
 
     return res.status(200).json({
       success: true,
-      message: `Document "${document.title}" removed successfully from storage and repository.`,
+      message: `Document "${document.title}" and its vector embeddings removed successfully.`,
       deletedId: id,
     });
   } catch (error) {

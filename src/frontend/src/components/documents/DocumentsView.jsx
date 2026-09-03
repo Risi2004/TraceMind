@@ -249,6 +249,22 @@ export const DocumentsView = ({
                     <span className="doc-meta-item">
                       <span>{sizeLabel}</span>
                     </span>
+                    {doc.metadata?.totalPages && doc.metadata.totalPages > 0 && (
+                      <>
+                        <span className="doc-meta-divider">•</span>
+                        <span className="doc-meta-item">
+                          <span>{doc.metadata.totalPages} Page{doc.metadata.totalPages > 1 ? 's' : ''}</span>
+                        </span>
+                      </>
+                    )}
+                    {doc.metadata?.chunksCount !== undefined && doc.metadata.chunksCount > 0 && (
+                      <>
+                        <span className="doc-meta-divider">•</span>
+                        <span className="doc-meta-item chunks-pill" title={`${doc.metadata.chunksCount} RAG Vector Chunks`}>
+                          <span>{doc.metadata.chunksCount} Chunks</span>
+                        </span>
+                      </>
+                    )}
                     <span className="doc-meta-divider">•</span>
                     <span className="doc-meta-item">
                       <span>{createdDate}</span>
@@ -262,6 +278,13 @@ export const DocumentsView = ({
                       </>
                     )}
                   </div>
+                  {doc.status === 'failed' && doc.errorMessage && (
+                    <div className="doc-error-note" title={doc.errorMessage}>
+                      <AlertCircleIcon size={12} />
+                      <span>{doc.errorMessage}</span>
+                    </div>
+                  )}
+
                 </div>
 
                 <div className="doc-card-footer">
