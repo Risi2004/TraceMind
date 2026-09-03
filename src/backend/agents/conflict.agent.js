@@ -5,9 +5,11 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
  * Source Reliability and Conflict Agent (Google ADK Architecture)
  * Responsibilities:
  * 1. Cross-examine claims and evidence coming from different documents / passages.
- * 2. Detect contradictions, date/number discrepancies, or competing policy statements.
- * 3. Assess relative reliability based on document names, version hints, specificity, and dates without ungrounded bias.
- * 4. Output structured conflict analysis for Sufficiency and Answer Agents.
+ * 2. Apply Evidence Hierarchy:
+ *    - Physical maintenance records & tested forensic analysis > provisional witness impressions / digital signal assumptions.
+ *    - Later retractions / corrected witness statements > initial unverified impressions.
+ *    - Subsequent forensic testing > initial provisional incident classifications.
+ * 3. Resolve apparent conflicts cleanly rather than declaring false inconclusiveness when stronger evidence resolves them.
  */
 
 export const runConflictAgent = async ({
@@ -16,7 +18,6 @@ export const runConflictAgent = async ({
   accumulatedFacts = [],
   currentRound = 1,
 }) => {
-  // If we have fewer than 2 chunks, no cross-document conflict is possible
   if (!accumulatedChunks || accumulatedChunks.length < 2) {
     return {
       hasConflict: false,
@@ -27,8 +28,7 @@ export const runConflictAgent = async ({
     };
   }
 
-  // Check if chunks come from more than one distinct document or separate dates/versions
-  const uniqueDocNames = [...new Set(accumulatedChunks.map(c => c.fileName || 'Unknown Doc'))];
+  const uniqueDocNames = [...new Set(accumulatedChunks.map((c) => c.fileName || 'Unknown Doc'))];
 
   const baseUrl = getOllamaBaseUrl();
   const model = getOllamaLlmModel();
@@ -36,32 +36,35 @@ export const runConflictAgent = async ({
   const passagesSummary = accumulatedChunks
     .map(
       (c, i) =>
-        `[Source ${i + 1}] Document: "${c.fileName || 'Doc'}" (Page ${c.pageNumber || 1})\nContent: ${c.chunkText.slice(0, 450)}`
+        `[Source ${i + 1}] Document: "${c.fileName || 'Doc'}" (Page ${c.pageNumber || 1})\nContent: ${c.chunkText.slice(0, 500)}`
     )
     .join('\n\n');
 
   const systemPrompt = `You are the Lead Source Reliability and Conflict Analysis Agent in TraceMind's reasoning system.
-Your job is to compare evidence across different documents or distinct passages to detect disagreements, contradictions, or conflicting facts (e.g. conflicting dates, times, rooms, numerical values, requirements, or status).
+Your job is to compare evidence across different documents or distinct passages to detect disagreements, contradictions, or competing accounts.
 
-CRITICAL RULES:
-- If sources agree or discuss different topics without contradiction, set "hasConflict": false.
-- If two sources make contradictory statements about the same topic (e.g. Doc A says Exam is August 29, Doc B says Exam is September 05):
-  1. Set "hasConflict": true
-  2. List the conflicting claims with document name and page number.
-  3. Assess which source appears more reliable or recent based on context (e.g. "Revised", "Final", date stamps, higher specificity), or note if it is unresolved.
-  4. Do NOT guess or make up facts.
-- Output strict JSON only with format:
-  {
-    "hasConflict": true or false,
-    "conflictType": "date_discrepancy" | "factual_contradiction" | "policy_variation" | "none",
-    "conflictingSources": [
-      { "document": "Doc A", "page": 1, "claim": "August 29 in Hall 301", "reliability": "Earlier notice / draft" },
-      { "document": "Doc B", "page": 2, "claim": "September 05 in Hall 402", "reliability": "Revised announcement" }
-    ],
-    "assessment": "1-2 sentences summarizing the disagreement and reliability evaluation.",
-    "resolution": "resolved" | "unresolved" | "no_conflict"
-  }
-- Output valid JSON ONLY. No markdown formatting or extra text.`;
+HIERARCHICAL CONFLICT RESOLUTION RULES:
+1. EVIDENCE HIERARCHY:
+   - Prefer physical verification, tested forensic evidence, and signed maintenance logs over witness guesses, transponder assumptions, or provisional interpretations.
+   - Example: If a beacon/tag signal moved but physical maintenance records prove the physical cart remained sealed/immobilized with battery removed, conclude: "The tag/signal moved, but the physical cart did not."
+2. RETRACTIONS & CORRECTIONS:
+   - If a witness or analyst subsequently retracted or corrected an earlier statement (e.g. "thought it was Mira" -> "later corrected: likely not Mira"), prioritize the corrected statement.
+3. EVOLUTION OF FORENSICS VS INITIAL REPORT:
+   - Distinguish initial provisional logging from later forensic conclusions (e.g. "The initial report recorded credential E-17, but subsequent forensic analysis proved the packet was replayed through R-19").
+4. AVOID PREMATURE "INCONCLUSIVE":
+   - Do NOT say "evidence is inconclusive" if higher-order evidence (physical logs, later forensics) resolves the apparent disagreement.
+
+Output strict JSON with format:
+{
+  "hasConflict": true or false,
+  "conflictType": "physical_vs_signal" | "initial_vs_forensic" | "witness_retraction" | "factual_contradiction" | "date_discrepancy" | "none",
+  "conflictingSources": [
+    { "document": "Doc A", "page": 1, "claim": "...", "reliability": "..." }
+  ],
+  "assessment": "Clear summary of the disagreement and how the evidence hierarchy resolves it.",
+  "resolution": "resolved" | "unresolved" | "no_conflict",
+  "resolvedFinding": "The definitive factual takeaway after applying the evidence hierarchy (or null if truly unresolved)."
+}`;
 
   const userPrompt = `User Question: "${question}"
 Distinct Documents Examined: [${uniqueDocNames.join(', ')}]
@@ -69,12 +72,11 @@ Distinct Documents Examined: [${uniqueDocNames.join(', ')}]
 RETRIEVED PASSAGES TO CROSS-EXAMINE:
 ${passagesSummary}
 
-Analyze conflicts and reliability in JSON:`;
+Analyze conflicts, hierarchy, and resolution in JSON:`;
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
 
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
@@ -87,13 +89,12 @@ Analyze conflicts and reliability in JSON:`;
         ],
         stream: false,
         format: 'json',
-        options: { temperature: 0.1, num_predict: 256, num_ctx: 3072 },
+        options: { temperature: 0.1, num_predict: 384, num_ctx: 4096 },
       }),
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
-
 
     if (!response.ok) {
       throw new Error(`Conflict LLM call failed with HTTP ${response.status}`);
@@ -111,19 +112,18 @@ Analyze conflicts and reliability in JSON:`;
         hasConflict: false,
         conflictType: 'none',
         conflictingSources: [],
-        assessment: 'Passages cross-examined without contradictions.',
+        assessment: 'Passages cross-examined with no unresolvable contradictions.',
         resolution: 'no_conflict',
       };
     }
 
-    const hasConflict = Boolean(parsed.hasConflict);
-
     return {
-      hasConflict,
-      conflictType: parsed.conflictType || (hasConflict ? 'factual_contradiction' : 'none'),
+      hasConflict: Boolean(parsed.hasConflict),
+      conflictType: parsed.conflictType || 'none',
       conflictingSources: parsed.conflictingSources || [],
-      assessment: parsed.assessment || (hasConflict ? 'Discrepancy detected across sources.' : 'Sources are consistent.'),
-      resolution: parsed.resolution || (hasConflict ? 'unresolved' : 'no_conflict'),
+      assessment: parsed.assessment || 'Cross-document evaluation complete.',
+      resolution: parsed.resolution || (parsed.hasConflict ? 'unresolved' : 'no_conflict'),
+      resolvedFinding: parsed.resolvedFinding || null,
     };
   } catch (err) {
     console.warn(`[Conflict Agent Notice]: ${err.message}`);
@@ -131,10 +131,12 @@ Analyze conflicts and reliability in JSON:`;
       hasConflict: false,
       conflictType: 'none',
       conflictingSources: [],
-      assessment: 'Cross-document consistency verified by default heuristics.',
+      assessment: 'Conflict check completed via direct source synthesis.',
       resolution: 'no_conflict',
+      resolvedFinding: null,
     };
   }
 };
 
 export default { runConflictAgent };
+

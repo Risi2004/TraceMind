@@ -3,7 +3,8 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
 
 /**
  * 5. Follow-up Search Agent (Google ADK Architecture)
- * Generates targeted alternative search queries to locate missing information in subsequent search rounds.
+ * Generates targeted alternative search queries to locate missing information,
+ * physical maintenance records, forensic reviews, or timeline data in subsequent search rounds.
  */
 
 export const runFollowUpSearchAgent = async ({
@@ -18,23 +19,26 @@ export const runFollowUpSearchAgent = async ({
   const systemPrompt = `You are the Follow-up Search Agent in TraceMind's iterative reasoning system.
 Your job is to generate a new, highly targeted search query to retrieve the missing information identified by the Sufficiency Agent.
 
-CRITICAL RULES:
-- Output strict JSON with format:
-  "followUpQuery": "Specific keyword or semantic phrase to search Qdrant for missing facts",
-  "searchRationale": "1 short sentence explaining what this follow-up query is targeting"
-- Do NOT repeat past queries: [${previousQueries.map(q => `"${q}"`).join(', ')}]
-- Focus directly on the missing information (e.g. synonyms, specific codes, table headers).
-- Output valid JSON only with no conversational text.`;
+TARGETED SEARCH RULES:
+1. If the missing detail involves physical status vs digital beacon/tag movement, target keywords like "maintenance", "log", "cart status", "battery", "storage", or "inspection".
+2. If the missing detail involves credential use vs physical presence, target keywords like "packet replay", "forensic analysis", "network log", or "spoofing".
+3. If the missing detail involves causality or timeline, target exact identifiers, equipment codes, or timestamps.
+4. Do NOT repeat past queries: [${previousQueries.map((q) => `"${q}"`).join(', ')}].
+
+Output strict JSON with format:
+{
+  "followUpQuery": "Concise search phrase to query Qdrant Cloud",
+  "searchRationale": "1 short sentence explaining what this query is retrieving"
+}`;
 
   const userPrompt = `Original Question: "${question}"
-Missing Information Identified: "${missingInformation || 'Additional specific details'}"
+Missing Information Identified: "${missingInformation || 'Additional specific records or physical verification'}"
 
 Generate the next targeted search query in JSON:`;
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
 
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
@@ -53,7 +57,6 @@ Generate the next targeted search query in JSON:`;
     });
 
     clearTimeout(timeoutId);
-
 
     if (!response.ok) {
       throw new Error(`Follow-up Search LLM call failed with HTTP ${response.status}`);
@@ -75,7 +78,7 @@ Generate the next targeted search query in JSON:`;
 
     let followUpQuery = (parsed.followUpQuery || '').trim();
     if (!followUpQuery || previousQueries.includes(followUpQuery)) {
-      followUpQuery = `${missingInformation || question} details`;
+      followUpQuery = `${missingInformation || question} physical forensic record`;
     }
 
     return {
@@ -92,3 +95,4 @@ Generate the next targeted search query in JSON:`;
 };
 
 export default { runFollowUpSearchAgent };
+

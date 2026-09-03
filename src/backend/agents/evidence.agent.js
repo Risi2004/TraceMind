@@ -3,7 +3,12 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
 
 /**
  * 3. Evidence Analysis Agent (Google ADK Architecture)
- * Evaluates retrieved chunks, extracts verified factual claims, and links exact page citations.
+ * Evaluates retrieved chunks, extracts verified factual claims, and classifies:
+ * - Physical objects vs digital identifiers/tags/signals
+ * - People vs credential packets/badge logs
+ * - Direct execution vs association/proximity
+ * - Explicit facts vs unsupported inferences
+ * - Timestamps and sequential event order
  */
 
 export const runEvidenceAgent = async ({ question, newChunks = [], currentRound = 1 }) => {
@@ -19,33 +24,50 @@ export const runEvidenceAgent = async ({ question, newChunks = [], currentRound 
   const model = getOllamaLlmModel();
 
   const passagesText = newChunks
-    .map((chunk, idx) => `[Passage ${idx + 1}] File: "${chunk.fileName}" (Page ${chunk.pageNumber || 1})\n${chunk.chunkText}`)
+    .map(
+      (chunk, idx) =>
+        `[Passage ${idx + 1}] File: "${chunk.fileName || 'Document'}" (Page ${chunk.pageNumber || 1})\n${chunk.chunkText}`
+    )
     .join('\n\n');
 
-  const systemPrompt = `You are the Evidence Extraction Agent in TraceMind's verification pipeline.
-Your job is to analyze retrieved document passages and extract only the relevant, factual statements directly answering or related to the user's question.
+  const systemPrompt = `You are the Lead Evidence Analysis Agent in TraceMind's reasoning pipeline.
+Your job is to analyze retrieved document passages and extract rigorous, verified factual statements.
 
-CRITICAL RULES:
-- Output strict JSON with format:
+REASONING & EXTRACTION RULES:
+1. PHYSICAL OBJECT VS DIGITAL IDENTIFIER:
+   - Differentiate between a digital tag, beacon, transponder, or log entry moving vs the physical object itself moving.
+2. PERSON VS CREDENTIAL:
+   - Differentiate between a credential/badge/key packet transmission vs the physical person being present.
+3. ASSOCIATION VS RESPONSIBILITY:
+   - Distinguish access, proximity, or possession from direct physical operation or guilt.
+4. FACT VS INFERENCE:
+   - Extract only explicit observations and statements. Do NOT infer unstated motives or causes.
+5. TIMESTAMPS:
+   - Preserve exact timestamps, dates, and sequence markers.
+6. CITATIONS:
+   - Always link facts to their exact human-readable source: [FileName, Page X].
+
+Output strict JSON with format:
+{
   "extractedFacts": [
-    "Fact 1 with [File Name, Page X]",
-    "Fact 2 with [File Name, Page X]"
+    "Fact statement with [FileName, Page X]"
   ],
-  "evidenceSummary": "Concise 1-2 sentence summary of what facts were verified in these passages."
-- Extract ONLY facts clearly stated in the text. Do not make assumptions.
-- Output valid JSON only with no surrounding markdown ticks or commentary.`;
+  "evidenceSummary": "Concise 1-2 sentence factual summary.",
+  "physicalVsDigitalObservations": "Notes if digital tags vs physical objects are discussed (or null)",
+  "personVsCredentialObservations": "Notes if credentials vs physical presence are discussed (or null)",
+  "timelineItems": ["22:07 - Event A [FileName, Page X]"]
+}`;
 
   const userPrompt = `User Question: "${question}"
 
 DOCUMENT PASSAGES:
 ${passagesText}
 
-Extract verified facts in JSON:`;
+Extract verified facts with human-readable citations in JSON:`;
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
 
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
@@ -65,7 +87,6 @@ Extract verified facts in JSON:`;
 
     clearTimeout(timeoutId);
 
-
     if (!response.ok) {
       throw new Error(`Evidence LLM call failed with HTTP ${response.status}`);
     }
@@ -79,8 +100,11 @@ Extract verified facts in JSON:`;
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
     } catch {
       parsed = {
-        extractedFacts: newChunks.slice(0, 3).map(c => `Extracted evidence from ${c.fileName} (Page ${c.pageNumber || 1}): ${c.chunkText.slice(0, 150)}...`),
-        evidenceSummary: `Extracted ${newChunks.length} evidence passages.`,
+        extractedFacts: newChunks.slice(0, 3).map(
+          (c) =>
+            `[${c.fileName || 'Document'}, Page ${c.pageNumber || 1}]: ${c.chunkText.slice(0, 150)}...`
+        ),
+        evidenceSummary: `Extracted facts from ${newChunks.length} evidence passages.`,
       };
     }
 
@@ -88,17 +112,20 @@ Extract verified facts in JSON:`;
       round: currentRound,
       extractedFacts: parsed.extractedFacts || [],
       summary: parsed.evidenceSummary || `Analyzed ${newChunks.length} document chunk(s).`,
+      physicalVsDigital: parsed.physicalVsDigitalObservations || null,
+      personVsCredential: parsed.personVsCredentialObservations || null,
+      timelineItems: parsed.timelineItems || [],
       analyzedChunksCount: newChunks.length,
     };
   } catch (err) {
     console.warn(`[Evidence Agent Notice]: ${err.message}. Using direct chunk extraction.`);
     const fallbackFacts = (newChunks || []).slice(0, 5).map(
-      (c) => `[${c.fileName}, Page ${c.pageNumber || 1}]: ${c.chunkText.slice(0, 300)}`
+      (c) => `[${c.fileName || 'Document'}, Page ${c.pageNumber || 1}]: ${c.chunkText.slice(0, 300)}`
     );
     return {
       round: currentRound,
       extractedFacts: fallbackFacts,
-      summary: `Extracted ${fallbackFacts.length} factual passage(s) from retrieved documents.`,
+      summary: `Analyzed ${newChunks.length} chunk(s) directly from retrieved documents.`,
       analyzedChunksCount: newChunks.length,
     };
   }
