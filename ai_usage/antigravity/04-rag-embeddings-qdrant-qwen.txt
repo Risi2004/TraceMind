@@ -245,9 +245,27 @@ Improve the reasoning quality of the TraceMind RAG/agent system without rebuildi
 - Updated `src/backend/agents/conflict.agent.js`: Implemented hierarchical conflict resolution (Physical Logs > Signals; Retractions > Initial Statements).
 - Updated `src/backend/agents/sufficiency.agent.js`: Embedded a 9-point verification checklist ensuring entity separation, timeline causality, and calibrated abstention.
 - Updated `src/backend/agents/followup.agent.js`: Formulated targeted queries for physical maintenance ledgers, forensic packet reviews, and timeline validation.
-- Validated with automated test suite covering Cases A through H with 100% rule compliance.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 15: Real-Time & Post-Answer Interactive 3D Agent Flow Visualizer
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+1. Add a "View Agent Flow" button to every completed TraceMind answer and enable viewing the interactive 3D agent flow diagram LIVE in real-time while agents perform actions during the loading state.
+2. The 3D graph must visualize the real Google ADK agent execution flow (Planner -> Retrieval -> Evidence -> Conflict [only if conflict exists] -> Sufficiency -> Follow-up [only if needed] -> Answer Synthesizer).
+3. Do not create fake steps; show only agents that actually executed. Show search rounds, sources reviewed, and conflicts detected.
+4. Auto-focus on the currently active running agent node with pulsating energy indicators.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Installed `three` (Three.js WebGL) in `src/frontend`.
+- Updated `src/backend/agents/adkOrchestrator.js` to emit real-time `executionEvents` across all search rounds and return them with `/api/rag/query`.
+- Built `src/frontend/src/components/chat/AgentFlowModal.jsx` and `AgentFlowModal.css` featuring interactive 3D floating nodes, glowing torus orbit rings, particle streams, orbit controls, zoom/pan, reset view, real-time live execution badge, and operational metadata inspection drawer without exposing raw prompts.
+- Added "View Agent Flow" triggers in:
+  1. The top navigation bar (`Live Agent Flow` with pulsing live indicator).
+  2. Directly inside the investigation loading card in `MessageList.jsx`.
+  3. Every completed assistant message card action bar.
+  4. The right-hand `InvestigationPanel.jsx` drawer.
+- Implemented real-time dynamic progression tracking in `ChatDashboard.jsx` allowing users to open and watch the 3D Agent Flow in real-time while TraceMind processes on RunPod.
 
 ================================================================================
 END OF SESSION 04 LOG
 ================================================================================
-

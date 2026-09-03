@@ -6,7 +6,8 @@ import {
   CopyIcon,
   CheckIcon,
   FileTextIcon,
-  ActivityIcon
+  ActivityIcon,
+  NetworkIcon
 } from '../common/Icons';
 import { SourcesSection } from './SourcesSection';
 import { MOCK_SUGGESTIONS, MOCK_CITATIONS_DATABASE } from '../../mock/chatMockData';
@@ -19,10 +20,12 @@ export const MessageList = ({
   onSelectSuggestion,
   onOpenSourcePreview,
   onOpenInvestigation,
+  onOpenAgentFlow,
   showCitations = true,
   showConfidence = true
 }) => {
   const [copiedId, setCopiedId] = useState(null);
+
 
   const handleCopy = (msgId, text) => {
     navigator.clipboard.writeText(text);
@@ -66,8 +69,8 @@ export const MessageList = ({
         {Array.isArray(children)
           ? children.map((child, i) => (typeof child === 'string' ? renderWithCitations(child) : child))
           : typeof children === 'string'
-          ? renderWithCitations(children)
-          : children}
+            ? renderWithCitations(children)
+            : children}
       </p>
     ),
     strong: ({ children }) => <strong className="md-strong">{children}</strong>,
@@ -80,8 +83,8 @@ export const MessageList = ({
         {Array.isArray(children)
           ? children.map((child, i) => (typeof child === 'string' ? renderWithCitations(child) : child))
           : typeof children === 'string'
-          ? renderWithCitations(children)
-          : children}
+            ? renderWithCitations(children)
+            : children}
       </li>
     ),
     h1: ({ children }) => <h1 className="md-h1">{children}</h1>,
@@ -226,8 +229,19 @@ export const MessageList = ({
                     <ActivityIcon size={13} />
                     <span>View Investigation</span>
                   </button>
+
+                  <button
+                    type="button"
+                    className="action-btn text-cyan view-agent-flow-btn"
+                    onClick={() => onOpenAgentFlow && onOpenAgentFlow(msg)}
+                    title="View 3D Interactive Agent Execution Flow"
+                  >
+                    <NetworkIcon size={13} />
+                    <span>View Agent Flow</span>
+                  </button>
                 </div>
               )}
+
             </div>
           </div>
         </div>

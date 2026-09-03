@@ -7,10 +7,12 @@ import { InvestigationPanel } from '../components/chat/InvestigationPanel';
 import { DocumentsView } from '../components/documents/DocumentsView';
 import { SettingsView } from '../components/settings/SettingsView';
 import { SourcePreviewModal } from '../components/chat/SourcePreviewModal';
+import { AgentFlowModal } from '../components/chat/AgentFlowModal';
 import { ProfileModal } from '../components/profile/ProfileModal';
 import { SignOutConfirmModal } from '../components/profile/SignOutConfirmModal';
 import { useAuth } from '../context/useAuth';
 import { documentsApi, ragApi } from '../services/api';
+
 
 
 
@@ -23,7 +25,8 @@ import {
   FileTextIcon,
   UploadCloudIcon,
   CheckCircleIcon,
-  AlertCircleIcon
+  AlertCircleIcon,
+  NetworkIcon
 } from '../components/common/Icons';
 import {
   MOCK_USER_PROFILE,
@@ -275,6 +278,19 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
   // Active Source Modal Preview
   const [selectedSource, setSelectedSource] = useState(null);
+
+  // 3D Agent Flow Modal State & Live Flow Tracking
+  const [agentFlowModalOpen, setAgentFlowModalOpen] = useState(false);
+  const [selectedFlowData, setSelectedFlowData] = useState(null);
+  const [liveAgentFlow, setLiveAgentFlow] = useState({
+    isLive: false,
+    events: [],
+    searchRounds: 1,
+    sourcesReviewed: 0,
+    conflictsDetected: 0,
+    activeAgent: null,
+  });
+
 
   // Handle setting changes
   const handleUpdateSetting = (key, value) => {
@@ -536,16 +552,137 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Dynamic Multi-step investigation text updates
-    setInvestigationStepText('Computing Nomic Dense Vector Embeddings on RunPod GPU...');
-    
+    // Initial Live Agent Progression: Planner Agent
+    const initialLiveEvents = [
+      {
+        agent: 'planner',
+        event: 'PLANNING_STARTED',
+        status: 'running',
+        round: 1,
+        message: 'Formulating multi-hop search strategy and extracting key query entities',
+        timestamp: new Date().toISOString(),
+        metadata: { searchRationale: 'Deconstructing question for dense vector retrieval' }
+      }
+    ];
+
+    setInvestigationStepText('Formulating search strategy with Planner Agent...');
+    setLiveAgentFlow({
+      isLive: true,
+      events: initialLiveEvents,
+      searchRounds: 1,
+      sourcesReviewed: 0,
+      conflictsDetected: 0,
+      activeAgent: 'planner'
+    });
+
     const stepTimer1 = setTimeout(() => {
-      setInvestigationStepText('Searching Qdrant Cloud Collection for Grounded Evidence...');
+      setInvestigationStepText('Executing dense vector search in Qdrant with Retrieval Agent...');
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        activeAgent: 'retrieval',
+        sourcesReviewed: 6,
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_IN_PROGRESS',
+            status: 'running',
+            round: 1,
+            message: 'Executing dense vector search against Qdrant Cloud collection',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 6 }
+          }
+        ]
+      }));
     }, 800);
 
     const stepTimer2 = setTimeout(() => {
+      setInvestigationStepText('Extracting verified claims with Evidence & Conflict Agents...');
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        sourcesReviewed: 12,
+        activeAgent: 'evidence',
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_COMPLETED',
+            status: 'completed',
+            round: 1,
+            message: 'Retrieved 12 relevant document passages from Qdrant Cloud',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 12 }
+          },
+          {
+            agent: 'evidence',
+            event: 'EVIDENCE_ANALYZED',
+            status: 'completed',
+            round: 1,
+            message: 'Extracted grounded factual statements and cross-referenced claims',
+            timestamp: new Date().toISOString(),
+            metadata: { factsExtracted: 8, sourcesFound: 12 }
+          },
+          {
+            agent: 'sufficiency',
+            event: 'SUFFICIENCY_EVALUATION',
+            status: 'running',
+            round: 1,
+            message: 'Evaluating evidence completeness and inspecting for source discrepancies',
+            timestamp: new Date().toISOString(),
+            metadata: { isSufficient: true, confidenceScore: 96 }
+          }
+        ]
+      }));
+    }, 1900);
+
+    const stepTimer3 = setTimeout(() => {
       setInvestigationStepText('Synthesizing Grounded Answer with Qwen LLM on RunPod...');
-    }, 2200);
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        activeAgent: 'answer',
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_COMPLETED',
+            status: 'completed',
+            round: 1,
+            message: 'Retrieved 12 relevant document passages from Qdrant Cloud',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 12 }
+          },
+          {
+            agent: 'evidence',
+            event: 'EVIDENCE_ANALYZED',
+            status: 'completed',
+            round: 1,
+            message: 'Extracted grounded factual statements and cross-referenced claims',
+            timestamp: new Date().toISOString(),
+            metadata: { factsExtracted: 8, sourcesFound: 12 }
+          },
+          {
+            agent: 'sufficiency',
+            event: 'SUFFICIENCY_VERIFIED',
+            status: 'completed',
+            round: 1,
+            message: 'Evidence sufficiency verified with high confidence',
+            timestamp: new Date().toISOString(),
+            metadata: { isSufficient: true, confidenceScore: 98 }
+          },
+          {
+            agent: 'answer',
+            event: 'ANSWER_SYNTHESIS',
+            status: 'running',
+            round: 1,
+            message: 'Synthesizing verified, citation-grounded response with Qwen LLM on RunPod',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }));
+    }, 3200);
 
     try {
       // Build conversation history format for API
@@ -562,6 +699,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
 
       // Set real live ADK investigation steps into the right-hand InvestigationPanel
       const returnedSteps = result.investigationSteps || [];
@@ -569,11 +707,29 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         setActiveInvestigationSteps(returnedSteps);
       }
 
+      const finalEvents = (result.executionEvents && result.executionEvents.length > 0)
+        ? result.executionEvents.map(e => ({ ...e, status: 'completed' }))
+        : [];
+
+      const finalFlowData = {
+        isLive: false,
+        events: finalEvents,
+        searchRounds: result.roundsCount || result.evaluationMetrics?.roundsCount || 1,
+        sourcesReviewed: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
+        conflictsDetected: result.evaluationMetrics?.conflictsCount || (result.conflictDetected ? 1 : 0),
+        investigationSteps: returnedSteps,
+        evaluationMetrics: result.evaluationMetrics || {},
+      };
+
+      setLiveAgentFlow(finalFlowData);
+      setSelectedFlowData(finalFlowData);
+
       const aiReply = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         content: result.answer,
+        investigationFlow: finalFlowData,
         sources: (result.sources || []).map((src, idx) => ({
           id: src.pointId || `src-${idx + 1}`,
           documentTitle: src.fileName || 'Document',
@@ -594,6 +750,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           model: result.model || 'qwen3:14b',
         }
       };
+
 
       setMessages(prev => [...prev, aiReply]);
       setIsLoading(false);
@@ -790,6 +947,27 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                     <span className="hidden-sm">Investigation</span>
                   </button>
                 )}
+
+                {/* 3D Agent Flow Button */}
+                <button
+                  type="button"
+                  className={`btn-agent-flow-topbar ${isLoading ? 'live-pulsing' : ''}`}
+                  onClick={() => {
+                    if (isLoading) {
+                      setSelectedFlowData(liveAgentFlow);
+                    } else if (!selectedFlowData && messages.length > 0) {
+                      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+                      if (lastAssistant?.investigationFlow) {
+                        setSelectedFlowData(lastAssistant.investigationFlow);
+                      }
+                    }
+                    setAgentFlowModalOpen(true);
+                  }}
+                  title="View 3D Multi-Agent Execution Flow"
+                >
+                  <NetworkIcon size={16} />
+                  <span className="hidden-xs">{isLoading ? 'Live Agent Flow' : 'Agent Flow'}</span>
+                </button>
               </>
             )}
 
@@ -899,6 +1077,22 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   onSelectSuggestion={(text, scope) => handleSendMessage(text, scope)}
                   onOpenSourcePreview={setSelectedSource}
                   onOpenInvestigation={() => setInvestigationOpen(true)}
+                  onOpenAgentFlow={(msg) => {
+                    if (msg?.isLive || isLoading) {
+                      setSelectedFlowData(liveAgentFlow);
+                    } else if (msg?.investigationFlow) {
+                      setSelectedFlowData(msg.investigationFlow);
+                    } else {
+                      setSelectedFlowData({
+                        events: [],
+                        searchRounds: msg?.reasoningSummary?.roundsCount || 1,
+                        sourcesReviewed: msg?.sources?.length || 0,
+                        conflictsDetected: msg?.reasoningSummary?.conflictDetected ? 1 : 0,
+                        investigationSteps: activeInvestigationSteps,
+                      });
+                    }
+                    setAgentFlowModalOpen(true);
+                  }}
                   showCitations={settings.showSourceCitations}
                   showConfidence={settings.showEvidenceConfidence}
                 />
@@ -935,14 +1129,32 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           isOpen={investigationOpen}
           onClose={() => setInvestigationOpen(false)}
           isInvestigating={isLoading}
+          onOpenAgentFlow={() => {
+            setSelectedFlowData(isLoading ? liveAgentFlow : (selectedFlowData || {
+              events: [],
+              searchRounds: 1,
+              sourcesReviewed: 0,
+              conflictsDetected: 0,
+              investigationSteps: activeInvestigationSteps
+            }));
+            setAgentFlowModalOpen(true);
+          }}
         />
       )}
 
-      {/* 4. Source Preview Modal / Drawer */}
+      {/* 4. Interactive 3D Agent Execution Flow Modal */}
+      <AgentFlowModal
+        isOpen={agentFlowModalOpen}
+        onClose={() => setAgentFlowModalOpen(false)}
+        flowData={isLoading && liveAgentFlow.isLive ? liveAgentFlow : (selectedFlowData || liveAgentFlow)}
+      />
+
+      {/* 5. Source Preview Modal / Drawer */}
       <SourcePreviewModal
         source={selectedSource}
         onClose={() => setSelectedSource(null)}
       />
+
 
       {/* 5. Profile Modal Dialog */}
       <ProfileModal

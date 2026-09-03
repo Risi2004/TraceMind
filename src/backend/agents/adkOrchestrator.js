@@ -41,6 +41,7 @@ export const executeAdkInvestigation = async ({
   });
 
   const investigationSteps = [];
+  const executionEvents = [];
   const accumulatedChunks = [];
   const accumulatedFacts = [];
   const seenChunkIds = new Set();
@@ -75,6 +76,19 @@ export const executeAdkInvestigation = async ({
     query: currentSearchQuery,
     details: plan.goal || `Decomposed query into targeted verification targets.`,
     found: plan.entities && plan.entities.length > 0 ? `Target Entities: ${plan.entities.join(', ')}` : undefined,
+  });
+
+  executionEvents.push({
+    agent: 'planner',
+    event: 'PLANNING_COMPLETED',
+    round: 1,
+    message: 'Planning investigation',
+    timestamp: new Date().toISOString(),
+    metadata: {
+      goal: plan.goal || 'Formulated search strategy',
+      entities: plan.entities || [],
+      primaryQuery: currentSearchQuery,
+    },
   });
 
   // -------------------------------------------------------------
@@ -113,6 +127,18 @@ export const executeAdkInvestigation = async ({
       pagesCount: retrievalResult.newChunks.length,
     });
 
+    executionEvents.push({
+      agent: 'retrieval',
+      event: 'SEARCH_COMPLETED',
+      round: currentRound,
+      message: `${retrievalResult.newChunks.length} relevant passage${retrievalResult.newChunks.length === 1 ? '' : 's'} found`,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        sourcesFound: retrievalResult.newChunks.length,
+        query: currentSearchQuery,
+      },
+    });
+
     // 2B & 2C. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
     const [evidenceResult, conflictReportResult] = await Promise.all([
       runEvidenceAgent({
@@ -146,12 +172,24 @@ export const executeAdkInvestigation = async ({
           : 'No additional facts discovered in this search round.',
     });
 
+    executionEvents.push({
+      agent: 'evidence',
+      event: 'EVIDENCE_ANALYZED',
+      round: currentRound,
+      message: 'Analyzing retrieved evidence',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        factsExtracted: evidenceResult.extractedFacts?.length || 0,
+        analyzedChunks: retrievalResult.newChunks?.length || 0,
+      },
+    });
+
     adkLogger.logConflictEvaluation({
       round: currentRound,
       conflictReport,
     });
 
-
+    // Only emit Conflict event if conflict was actually detected
     if (conflictReport.hasConflict) {
       investigationSteps.push({
         step: investigationSteps.length + 1,
@@ -161,8 +199,22 @@ export const executeAdkInvestigation = async ({
         details: conflictReport.assessment,
         found:
           conflictReport.conflictingSources && conflictReport.conflictingSources.length > 0
-            ? conflictReport.conflictingSources.map(s => `${s.document} (P.${s.page}): ${s.claim}`).join(' ⚡ ')
+            ? conflictReport.conflictingSources.map((s) => `${s.document} (P.${s.page}): ${s.claim}`).join(' ⚡ ')
             : 'Contradiction across document sources noted.',
+      });
+
+      executionEvents.push({
+        agent: 'conflict',
+        event: 'CONFLICT_DETECTED',
+        round: currentRound,
+        message: 'Conflicting evidence detected',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          conflictType: conflictReport.conflictType,
+          assessment: conflictReport.assessment,
+          resolution: conflictReport.resolution,
+          sourcesCount: conflictReport.conflictingSources?.length || 0,
+        },
       });
     } else if (accumulatedChunks.length >= 2) {
       investigationSteps.push({
@@ -183,13 +235,26 @@ export const executeAdkInvestigation = async ({
       currentRound,
     });
 
-
     adkLogger.logSufficiencyEvaluation({
       round: currentRound,
       isSufficient: sufficiencyStatus.isSufficient,
       confidenceScore: sufficiencyStatus.confidenceScore,
       reason: sufficiencyStatus.reason,
       missingInformation: sufficiencyStatus.missingInformation,
+    });
+
+    executionEvents.push({
+      agent: 'sufficiency',
+      event: 'SUFFICIENCY_EVALUATED',
+      round: currentRound,
+      message: sufficiencyStatus.isSufficient ? 'Evidence sufficient' : 'More evidence required',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        isSufficient: Boolean(sufficiencyStatus.isSufficient),
+        confidenceScore: sufficiencyStatus.confidenceScore,
+        reason: sufficiencyStatus.reason,
+        missingInformation: sufficiencyStatus.missingInformation,
+      },
     });
 
     if (sufficiencyStatus.isSufficient) {
@@ -228,6 +293,19 @@ export const executeAdkInvestigation = async ({
         followUpQuery: currentSearchQuery,
         searchRationale: followUpResult.searchRationale,
         missingInfo: sufficiencyStatus.missingInformation,
+      });
+
+      executionEvents.push({
+        agent: 'followup',
+        event: 'FOLLOWUP_GENERATED',
+        round: currentRound,
+        message: 'Preparing targeted follow-up search',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          followUpQuery: currentSearchQuery,
+          searchRationale: followUpResult.searchRationale,
+          missingTarget: sufficiencyStatus.missingInformation,
+        },
       });
 
       investigationSteps.push({
@@ -269,6 +347,18 @@ export const executeAdkInvestigation = async ({
     }.`,
   });
 
+  executionEvents.push({
+    agent: 'answer',
+    event: 'ANSWER_GENERATED',
+    round: currentRound,
+    message: 'Generating final answer',
+    timestamp: new Date().toISOString(),
+    metadata: {
+      sourcesUsed: accumulatedChunks.length,
+      conflictHandled: Boolean(conflictReport && conflictReport.hasConflict),
+    },
+  });
+
   // Format sources for citation rendering
   const sources = accumulatedChunks.map((chunk, idx) => ({
     fileName: chunk.fileName,
@@ -305,6 +395,7 @@ export const executeAdkInvestigation = async ({
     conflictReport: conflictReport.hasConflict ? conflictReport : undefined,
     sources,
     investigationSteps,
+    executionEvents,
     evaluationMetrics: {
       responseTimeMs: durationMs,
       roundsCount: currentRound,
@@ -312,6 +403,7 @@ export const executeAdkInvestigation = async ({
       topKConfigured: effectiveTopK,
       sourcesUsedCount: sources.length,
       conflictDetected: Boolean(conflictReport && conflictReport.hasConflict),
+      conflictsCount: conflictReport.hasConflict ? (conflictReport.conflictingSources?.length || 1) : 0,
     },
     model: getOllamaLlmModel(),
     timestamp: new Date().toISOString(),
@@ -321,5 +413,6 @@ export const executeAdkInvestigation = async ({
 export default {
   executeAdkInvestigation,
 };
+
 
 
