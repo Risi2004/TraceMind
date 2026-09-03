@@ -39,9 +39,12 @@ export const retrieveRelevantChunks = async ({
   }
 
   const limit = topK || getRagTopK();
+  const scopeDisplay = Array.isArray(documentId)
+    ? (documentId.length === 0 ? 'all_documents' : documentId.join(', '))
+    : (documentId || 'all_documents');
 
   console.log(`\n🔍 [RAG Retrieval] Query: "${query}"`);
-  console.log(`👤 [RAG Retrieval] User ID: ${userId} | Scope: ${documentId || 'all_documents'} | Top K: ${limit}`);
+  console.log(`👤 [RAG Retrieval] User ID: ${userId} | Scope: ${scopeDisplay} | Top K: ${limit}`);
 
   try {
     // 1. Generate dense vector embedding for user query via RunPod Ollama (Nomic Embed Text)
@@ -52,46 +55,82 @@ export const retrieveRelevantChunks = async ({
       throw new Error('Failed to generate embedding for search query.');
     }
 
-    // 2. Perform scoped semantic search in Qdrant Cloud
-    console.log(`🔷 [RAG Retrieval] Searching Qdrant Cloud (Top ${limit} chunks)...`);
+    // 2. Perform scoped semantic search in Qdrant Cloud (fetch broader candidate pool)
+    const searchLimit = Math.max(limit * 2, 16);
+    console.log(`🔷 [RAG Retrieval] Searching Qdrant Cloud (Candidate Pool: ${searchLimit})...`);
     const points = await searchSimilarChunks({
       userId,
       documentId: documentId && documentId !== 'all' ? documentId : undefined,
       queryVector,
-      limit,
+      limit: searchLimit,
       scoreThreshold,
     });
 
-    // 3. Format matched chunks with all required metadata fields
+
+    // Extract exact entity tokens (e.g. IT24101071, IE3010, room numbers, codes)
+    const queryTokens = (query.match(/\b[A-Za-z0-9_-]{4,}\b/g) || []).map((t) =>
+      t.toLowerCase()
+    );
+
+    // 3. Format and score chunks with exact-keyword boosting
     const formattedChunks = (points || []).map((point) => {
       const payload = point.payload || {};
+      const chunkText = payload.text || '';
+      const textLower = chunkText.toLowerCase();
+
+      // Check for exact entity token matches
+      let exactMatchesCount = 0;
+      for (const token of queryTokens) {
+        if (textLower.includes(token)) {
+          exactMatchesCount++;
+        }
+      }
+
+      const baseScore =
+        typeof point.score === 'number'
+          ? parseFloat(point.score.toFixed(4))
+          : 0.75;
+      const boostedScore = exactMatchesCount > 0 ? Math.min(1.0, baseScore + 0.25 * exactMatchesCount) : baseScore;
+
       return {
-        chunkText: payload.text || '',
+        chunkText,
         fileName: payload.fileName || '',
         documentId: payload.documentId || '',
         pageNumber: payload.pageNumber || 1,
         chunkNumber:
           payload.chunkNumber ||
           (payload.chunkIndex !== undefined ? payload.chunkIndex + 1 : 1),
-        similarityScore:
-          typeof point.score === 'number'
-            ? parseFloat(point.score.toFixed(4))
-            : null,
+        similarityScore: parseFloat(boostedScore.toFixed(4)),
+        hasExactMatch: exactMatchesCount > 0,
         tokenCount: payload.tokenCount || 0,
-        charCount: payload.charCount || (payload.text ? payload.text.length : 0),
+        charCount: payload.charCount || chunkText.length,
         pointId: point.id,
       };
     });
 
-    console.log(`✅ [RAG Retrieval] Found ${formattedChunks.length} relevant chunk(s).\n`);
+    // Prioritize exact keyword matches first, then sort by highest similarity score
+    formattedChunks.sort((a, b) => {
+      if (a.hasExactMatch && !b.hasExactMatch) return -1;
+      if (!a.hasExactMatch && b.hasExactMatch) return 1;
+      return (b.similarityScore || 0) - (a.similarityScore || 0);
+    });
+
+    const topChunks = formattedChunks.slice(0, limit);
+
+    console.log(
+      `✅ [RAG Retrieval] Found ${topChunks.length} relevant chunk(s) (${
+        topChunks.filter((c) => c.hasExactMatch).length
+      } with exact entity matches).\n`
+    );
 
     return {
       success: true,
       query: query.trim(),
       scope: documentId && documentId !== 'all' ? documentId : 'all_documents',
-      totalResults: formattedChunks.length,
-      chunks: formattedChunks,
+      totalResults: topChunks.length,
+      chunks: topChunks,
     };
+
   } catch (error) {
     console.error(`❌ [RAG Retrieval] Search failed:`, error.message);
     throw new Error(`RAG retrieval failed: ${error.message}`);

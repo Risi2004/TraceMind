@@ -32,6 +32,10 @@ Missing Information Identified: "${missingInformation || 'Additional specific de
 Generate the next targeted search query in JSON:`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -42,9 +46,14 @@ Generate the next targeted search query in JSON:`;
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.2, num_ctx: 4096 },
+        format: 'json',
+        options: { temperature: 0.2, num_predict: 256, num_ctx: 2048 },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       throw new Error(`Follow-up Search LLM call failed with HTTP ${response.status}`);

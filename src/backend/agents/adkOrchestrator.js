@@ -113,12 +113,22 @@ export const executeAdkInvestigation = async ({
       pagesCount: retrievalResult.newChunks.length,
     });
 
-    // 2B. Evidence Agent (Extract facts & citations)
-    const evidenceResult = await runEvidenceAgent({
-      question: query,
-      newChunks: retrievalResult.newChunks,
-      currentRound,
-    });
+    // 2B & 2C. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
+    const [evidenceResult, conflictReportResult] = await Promise.all([
+      runEvidenceAgent({
+        question: query,
+        newChunks: retrievalResult.newChunks,
+        currentRound,
+      }),
+      runConflictAgent({
+        question: query,
+        accumulatedChunks,
+        accumulatedFacts,
+        currentRound,
+      }),
+    ]);
+
+    conflictReport = conflictReportResult;
 
     if (evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0) {
       accumulatedFacts.push(...evidenceResult.extractedFacts);
@@ -136,18 +146,11 @@ export const executeAdkInvestigation = async ({
           : 'No additional facts discovered in this search round.',
     });
 
-    // 2C. Source Reliability & Conflict Agent (Cross-examine sources)
-    conflictReport = await runConflictAgent({
-      question: query,
-      accumulatedChunks,
-      accumulatedFacts,
-      currentRound,
-    });
-
     adkLogger.logConflictEvaluation({
       round: currentRound,
       conflictReport,
     });
+
 
     if (conflictReport.hasConflict) {
       investigationSteps.push({
@@ -175,9 +178,11 @@ export const executeAdkInvestigation = async ({
     sufficiencyStatus = await runSufficiencyAgent({
       question: query,
       accumulatedFacts,
+      accumulatedChunks,
       conflictReport,
       currentRound,
     });
+
 
     adkLogger.logSufficiencyEvaluation({
       round: currentRound,

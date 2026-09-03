@@ -123,6 +123,23 @@ export const checkFileExistsInR2 = async ({ key }) => {
 };
 
 /**
+ * Read object as Buffer from Cloudflare R2
+ */
+export const getObjectBufferFromR2 = async ({ key }) => {
+  if (isR2Configured() && r2Client) {
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+    const response = await r2Client.send(command);
+    const byteArray = await response.Body.transformToByteArray();
+    return Buffer.from(byteArray);
+  } else {
+    return getLocalFallbackBuffer(key);
+  }
+};
+
+/**
  * Read local fallback buffer if needed
  */
 export const getLocalFallbackBuffer = async (key) => {
@@ -132,3 +149,4 @@ export const getLocalFallbackBuffer = async (key) => {
   }
   return null;
 };
+

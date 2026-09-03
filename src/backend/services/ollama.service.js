@@ -56,10 +56,12 @@ export const checkOllamaHealth = async () => {
 
 /**
  * Generate a dense vector embedding for a single text using RunPod Ollama
+ * Includes automatic retry on transient proxy network hiccups.
  * @param {string} text - Input text content to embed
+ * @param {number} [retries=2] - Retry attempts on transient timeout
  * @returns {Promise<number[]>} - Float vector embedding array
  */
-export const generateEmbedding = async (text) => {
+export const generateEmbedding = async (text, retries = 2) => {
   const baseUrl = getOllamaBaseUrl();
   const model = getOllamaEmbeddingModel();
 
@@ -67,62 +69,69 @@ export const generateEmbedding = async (text) => {
     console.warn(
       `⚠️ OLLAMA_BASE_URL is not configured with a valid RunPod URL. Using fallback deterministic embedding for testing.`
     );
-    // Generate deterministic 384-dimensional normalized vector for development testing
-    return generateFallbackEmbedding(text, 384);
+    return generateFallbackEmbedding(text, 768);
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for large chunks
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout for RunPod GPU embedding
 
-  try {
-    // Try Ollama /api/embeddings (standard endpoint)
-    const response = await fetch(`${baseUrl}/api/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt: text,
-      }),
-      signal: controller.signal,
-    });
+    try {
+      const response = await fetch(`${baseUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          prompt: text,
+        }),
+        signal: controller.signal,
+      });
 
-    clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '');
-      throw new Error(
-        `Ollama embedding error (HTTP ${response.status}): ${errBody || response.statusText}. Ensure model "${model}" is pulled on your RunPod pod (run: ollama pull ${model}).`
-      );
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(
+          `Ollama embedding error (HTTP ${response.status}): ${errBody || response.statusText}. Ensure model "${model}" is pulled on your RunPod pod.`
+        );
+      }
+
+      const data = await response.json();
+
+      if (data.embedding && Array.isArray(data.embedding)) {
+        return data.embedding;
+      }
+
+      if (data.embeddings && Array.isArray(data.embeddings[0])) {
+        return data.embeddings[0];
+      }
+
+      throw new Error('Ollama response did not contain an embedding vector array.');
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const isLastAttempt = attempt === retries;
+
+      if (!isLastAttempt) {
+        console.warn(`[Ollama Embedding] Attempt ${attempt + 1} failed (${err.message}). Retrying in 1.5s...`);
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      if (err.name === 'AbortError') {
+        throw new Error(`RunPod Ollama request timed out after 90s at ${baseUrl}`);
+      }
+      throw new Error(`RunPod Ollama embedding failed: ${err.message}`);
     }
-
-    const data = await response.json();
-
-    if (data.embedding && Array.isArray(data.embedding)) {
-      return data.embedding;
-    }
-
-    // Secondary format check (e.g. /api/embed response)
-    if (data.embeddings && Array.isArray(data.embeddings[0])) {
-      return data.embeddings[0];
-    }
-
-    throw new Error('Ollama response did not contain an embedding vector array.');
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new Error(`RunPod Ollama request timed out after 30s at ${baseUrl}`);
-    }
-    throw new Error(`RunPod Ollama embedding failed: ${err.message}`);
   }
 };
 
 /**
- * Generate embeddings for multiple text chunks in parallel batches
+ * Generate embeddings for multiple text chunks in controlled sequential/small batches
  * @param {Array<{ text: string }>} chunks - Array of chunk objects
- * @param {number} concurrency - Max simultaneous requests to RunPod
+ * @param {number} concurrency - Max simultaneous requests to RunPod (default: 2)
  * @returns {Promise<Array<number[]>>} - Array of embedding vectors
  */
-export const generateBatchEmbeddings = async (chunks, concurrency = 4) => {
+export const generateBatchEmbeddings = async (chunks, concurrency = 2) => {
   const embeddings = new Array(chunks.length);
   let index = 0;
 
@@ -144,6 +153,7 @@ export const generateBatchEmbeddings = async (chunks, concurrency = 4) => {
   await Promise.all(workers);
   return embeddings;
 };
+
 
 /**
  * Deterministic fallback embedding generator for local testing when RunPod is offline

@@ -10,10 +10,19 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
 export const runSufficiencyAgent = async ({
   question,
   accumulatedFacts = [],
+  accumulatedChunks = [],
   conflictReport = null,
   currentRound = 1,
 }) => {
-  if (!accumulatedFacts || accumulatedFacts.length === 0) {
+  const effectiveFacts =
+    accumulatedFacts && accumulatedFacts.length > 0
+      ? accumulatedFacts
+      : (accumulatedChunks || []).map(
+          (c) =>
+            `[${c.fileName}, Page ${c.pageNumber || 1}]: ${c.chunkText.slice(0, 300)}`
+        );
+
+  if (effectiveFacts.length === 0) {
     return {
       isSufficient: false,
       confidenceScore: 30,
@@ -25,7 +34,8 @@ export const runSufficiencyAgent = async ({
   const baseUrl = getOllamaBaseUrl();
   const model = getOllamaLlmModel();
 
-  const factsList = accumulatedFacts.map((f, i) => `${i + 1}. ${f}`).join('\n');
+  const factsList = effectiveFacts.map((f, i) => `${i + 1}. ${f}`).join('\n');
+
   const conflictSummary = conflictReport && conflictReport.hasConflict
     ? `\nSOURCE CONFLICT DETECTED:\n- Type: ${conflictReport.conflictType}\n- Assessment: ${conflictReport.assessment}\n- Status: ${conflictReport.resolution}`
     : '\nSOURCE CONFLICT: None detected across sources.';
@@ -51,6 +61,10 @@ ${conflictSummary}
 Judge sufficiency in JSON:`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,9 +75,14 @@ Judge sufficiency in JSON:`;
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.1, num_ctx: 4096 },
+        format: 'json',
+        options: { temperature: 0.1, num_predict: 256, num_ctx: 3072 },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       throw new Error(`Sufficiency LLM call failed with HTTP ${response.status}`);

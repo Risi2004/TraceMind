@@ -1,9 +1,24 @@
 import { createRequire } from 'module';
 import mammoth from 'mammoth';
 
+// Polyfill standard DOM objects for Node.js environment to cleanly silence PDF.js visual canvas warnings
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix {};
+}
+if (typeof globalThis.Path2D === 'undefined') {
+  globalThis.Path2D = class Path2D {};
+}
+
+let pdfjsLibInstance = null;
+const getPdfJs = async () => {
+  if (!pdfjsLibInstance) {
+    pdfjsLibInstance = await import('pdfjs-dist/legacy/build/pdf.js');
+  }
+  return pdfjsLibInstance;
+};
+
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
-
 
 /**
  * Text Extractor Service for TraceMind RAG Pipeline
@@ -11,68 +26,144 @@ const pdfParse = require('pdf-parse');
  */
 
 /**
- * Extract text and page structure from a PDF buffer
+ * Extract raw text strings from corrupted or bad-XRef PDF buffers
+ */
+const extractRawTextFromPdfBinary = (buffer) => {
+  try {
+    const raw = buffer.toString('binary');
+    const textPieces = [];
+
+    // Match (Text) Tj and [(Text)] TJ operators
+    const tjRegex = /\(([^)]+)\)\s*Tj/g;
+    let match;
+    while ((match = tjRegex.exec(raw)) !== null) {
+      const clean = match[1]
+        .replace(/\\([()\\])/g, '$1')
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '')
+        .trim();
+      if (clean) textPieces.push(clean);
+    }
+
+    const arrayTjRegex = /\[([^\]]+)\]\s*TJ/g;
+    while ((match = arrayTjRegex.exec(raw)) !== null) {
+      const innerTj = match[1];
+      const innerMatches = innerTj.match(/\(([^)]+)\)/g);
+      if (innerMatches) {
+        const piece = innerMatches
+          .map((m) => m.slice(1, -1).replace(/\\([()\\])/g, '$1'))
+          .join('');
+        if (piece.trim()) textPieces.push(piece.trim());
+      }
+    }
+
+    if (textPieces.length > 0) {
+      return textPieces.join(' ');
+    }
+
+    // Fallback: extract long printable string sequences (length >= 4)
+    const printableRegex = /[\x20-\x7E\s]{4,}/g;
+    const matches = raw.match(printableRegex) || [];
+    const filtered = matches.filter(
+      (m) =>
+        !m.startsWith('/Filter') &&
+        !m.startsWith('/Length') &&
+        !m.includes('endstream') &&
+        !m.includes('endobj')
+    );
+    return filtered.join('\n').trim();
+  } catch {
+    return buffer.toString('utf-8').trim();
+  }
+};
+
+/**
+ * Extract text and page structure from a PDF buffer using modern pdfjs-dist engine
  */
 export const extractTextFromPdf = async (buffer) => {
   const pages = [];
-  let pageIndex = 1;
 
+  // Tier 1: Modern pdfjs-dist engine (handles ReportLab, XRef streams, complex fonts & damaged XRefs)
   try {
-    // Custom page renderer to track individual page contents
-    const customPageRender = (pageData) => {
-      return pageData.getTextContent().then((textContent) => {
-        let lastY;
-        let pageText = '';
-        for (const item of textContent.items) {
-          if (lastY === undefined || lastY === item.transform[5]) {
-            pageText += (pageText && !pageText.endsWith(' ') ? ' ' : '') + item.str;
-          } else {
-            pageText += '\n' + item.str;
-          }
-          lastY = item.transform[5];
-        }
-
-        pages.push({
-          pageNumber: pageIndex++,
-          text: pageText.trim(),
-        });
-
-        return pageText;
-      });
-    };
-
-    const parsed = await pdfParse(buffer, {
-      pagerender: customPageRender,
+    const pdfjsLib = await getPdfJs();
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Array,
+      useSystemFonts: true,
+      disableFontFace: true,
+      isEvalSupported: false,
+      verbosity: 0,
     });
 
-    // If custom pagerender didn't populate individual pages, fallback to form-feed split
-    if (pages.length === 0 && parsed.text) {
-      const rawPages = parsed.text.split(/\f/g);
-      rawPages.forEach((text, i) => {
-        if (text.trim()) {
-          pages.push({
-            pageNumber: i + 1,
-            text: text.trim(),
-          });
-        }
-      });
+
+
+    const pdfDoc = await loadingTask.promise;
+    let fullText = '';
+
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item) => item.str)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (pageText) {
+        pages.push({
+          pageNumber: p,
+          text: pageText,
+        });
+        fullText += (fullText ? '\n\n' : '') + pageText;
+      }
     }
 
-    return {
-      fullText: parsed.text || '',
-      pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: parsed.text || '' }],
-      totalPages: parsed.numpages || (pages.length > 0 ? pages.length : 1),
-    };
+    if (fullText.trim()) {
+      return {
+        fullText: fullText.trim(),
+        pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: fullText.trim() }],
+        totalPages: pdfDoc.numPages || pages.length || 1,
+      };
+    }
   } catch (err) {
-    console.warn(`[PDF Parser] Custom pagerender issue, falling back to basic parsing: ${err.message}`);
-    const fallbackParsed = await pdfParse(buffer);
-    return {
-      fullText: fallbackParsed.text || '',
-      pages: [{ pageNumber: 1, text: fallbackParsed.text || '' }],
-      totalPages: fallbackParsed.numpages || 1,
-    };
+    console.warn(`[PDF Parser] Modern pdfjs-dist parsing error: ${err.message}. Trying legacy parser...`);
   }
+
+  // Tier 2 Fallback: Standard pdfParse without custom pagerender
+  try {
+
+    const fallbackParsed = await pdfParse(buffer);
+    const fullText = (fallbackParsed.text || '').trim();
+    if (fullText) {
+      const rawPages = fullText.split(/\f/g);
+      const fallbackPages = [];
+      rawPages.forEach((text, i) => {
+        if (text.trim()) {
+          fallbackPages.push({ pageNumber: i + 1, text: text.trim() });
+        }
+      });
+
+      return {
+        fullText,
+        pages: fallbackPages.length > 0 ? fallbackPages : [{ pageNumber: 1, text: fullText }],
+        totalPages: fallbackParsed.numpages || 1,
+      };
+    }
+  } catch (err) {
+    console.warn(`[PDF Parser] Standard parser failed (${err.message}). Using raw stream recovery...`);
+  }
+
+  // Tier 3 Fallback: Binary stream text recovery for bad XRef / damaged PDFs
+  const recoveredText = extractRawTextFromPdfBinary(buffer);
+  console.log(`[PDF Parser] Raw stream recovery extracted ${recoveredText.length} characters.`);
+
+  return {
+    fullText: recoveredText,
+    pages: [{ pageNumber: 1, text: recoveredText }],
+    totalPages: 1,
+  };
 };
+
 
 
 /**

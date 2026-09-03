@@ -270,6 +270,232 @@
   font-size: 0.875rem;
 }
 
+/* Attach Button Badge */
+.btn-attach.has-staged {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+  position: relative;
+}
+
+.attach-count-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #0d152a;
+}
+
+/* Active Multi-Document Scope Chips */
+.active-scope-chips-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(13, 21, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.scope-chips-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-slate-400);
+  white-space: nowrap;
+}
+
+.scope-chips-scroll-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+.active-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  color: #93c5fd;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.4rem;
+  white-space: nowrap;
+}
+
+.chip-doc-icon {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.chip-doc-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-remove-btn {
+  color: #93c5fd;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem;
+  border-radius: 0.2rem;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.chip-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+/* Staged File Attachments Preview Tray */
+.staged-attachments-tray {
+  background: rgba(13, 21, 42, 0.85);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.staged-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.staged-tray-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-white);
+  letter-spacing: -0.01em;
+}
+
+.staged-tray-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.staged-tray-error {
+  font-size: 0.6875rem;
+  color: #f87171;
+  font-weight: 600;
+}
+
+.btn-upload-staged {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.35rem;
+  transition: background var(--transition-fast);
+  cursor: pointer;
+}
+
+.btn-upload-staged:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn-upload-staged:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-clear-staged {
+  font-size: 0.6875rem;
+  color: var(--color-slate-400);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.3rem;
+  transition: color var(--transition-fast);
+  cursor: pointer;
+}
+
+.btn-clear-staged:hover {
+  color: #f87171;
+}
+
+.staged-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  max-height: 110px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 0.25rem;
+}
+
+.staged-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+  color: var(--color-slate-200);
+  max-width: 260px;
+}
+
+.staged-icon {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.staged-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.staged-filesize {
+  font-size: 0.6875rem;
+  color: var(--color-slate-400);
+  flex-shrink: 0;
+}
+
+.staged-remove-btn {
+  color: var(--color-slate-400);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  border-radius: 0.2rem;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.staged-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
 /* Disclaimer */
 .chat-disclaimer {
   font-size: 0.6875rem;
@@ -277,4 +503,5 @@
   text-align: center;
   padding: 0 1rem;
 }
+
 

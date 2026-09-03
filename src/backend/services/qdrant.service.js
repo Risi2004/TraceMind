@@ -261,11 +261,20 @@ export const searchSimilarChunks = async ({
   const client = getQdrantClient();
   const collectionName = getQdrantCollectionName();
 
+  // Local fallback search support
+  const rawDocIds = Array.isArray(documentId)
+    ? documentId.filter(id => id && id !== 'all').map(String)
+    : typeof documentId === 'string' && documentId.trim() && documentId !== 'all'
+    ? documentId.includes(',')
+      ? documentId.split(',').map(s => s.trim()).filter(s => s && s !== 'all')
+      : [documentId.trim()]
+    : [];
+
   if (!client) {
     // Local fallback search
     const allFallbackPoints = [];
     for (const [docId, points] of localFallbackVectorStore.entries()) {
-      if (!documentId || documentId === 'all' || documentId === docId) {
+      if (rawDocIds.length === 0 || rawDocIds.includes(docId)) {
         allFallbackPoints.push(...points.filter(p => p.payload.userId === String(userId)));
       }
     }
@@ -285,14 +294,22 @@ export const searchSimilarChunks = async ({
     },
   ];
 
-  if (documentId && documentId !== 'all') {
+  if (rawDocIds.length === 1) {
     mustFilters.push({
       key: 'documentId',
       match: {
-        value: String(documentId),
+        value: rawDocIds[0],
+      },
+    });
+  } else if (rawDocIds.length > 1) {
+    mustFilters.push({
+      key: 'documentId',
+      match: {
+        any: rawDocIds,
       },
     });
   }
+
 
   try {
     const queryParams = {

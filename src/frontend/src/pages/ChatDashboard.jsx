@@ -306,16 +306,45 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     onNavigate('/login');
   };
 
-  // Scope label helper
+  // Scope label helper (supports single, multiple, or collection scopes)
   const getActiveScopeName = () => {
     if (!currentScope) return 'No Document Selected (Select or Upload)';
     if (currentScope === 'all') return `All Documents (${documents.length})`;
-    const col = MOCK_COLLECTIONS.find(c => c.id === currentScope);
+    if (Array.isArray(currentScope)) {
+      if (currentScope.length === 0) return 'No Document Selected';
+      if (currentScope.length === 1) {
+        const doc = documents.find((d) => (d._id || d.id) === currentScope[0]);
+        return doc ? doc.title || doc.filename : 'Target Document';
+      }
+      return `${currentScope.length} Active Documents`;
+    }
+    const col = MOCK_COLLECTIONS.find((c) => c.id === currentScope);
     if (col) return col.name;
-    const doc = documents.find(d => (d._id || d.id) === currentScope);
+    const doc = documents.find((d) => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Target Document';
     return 'Target Document';
   };
+
+  // Active documents array for chips display
+  const getActiveScopeDocs = () => {
+    if (!currentScope || currentScope === 'all') return [];
+    if (Array.isArray(currentScope)) {
+      return documents.filter((d) => currentScope.includes(d._id || d.id));
+    }
+    const doc = documents.find((d) => (d._id || d.id) === currentScope);
+    return doc ? [doc] : [];
+  };
+
+  // Remove individual document from active conversation scope
+  const handleRemoveScopeDoc = (docIdToRemove) => {
+    if (Array.isArray(currentScope)) {
+      const next = currentScope.filter((id) => id !== docIdToRemove);
+      setCurrentScope(next.length === 0 ? null : next.length === 1 ? next[0] : next);
+    } else if (currentScope === docIdToRemove) {
+      setCurrentScope(null);
+    }
+  };
+
 
   // Start a new chat (resets active session and leaves scope open for user to select/upload)
   const handleNewChat = () => {
@@ -420,16 +449,20 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         }));
       });
 
-      const uploadedDocIds = (result.documents || []).map(d => d._id || d.id);
+      const uploadedDocIds = (result.documents || []).map((d) => d._id || d.id);
 
-      // Refresh documents list in state and automatically scope the active chat to the uploaded document
+      // Refresh documents list in state and automatically scope the active chat to ALL uploaded documents
       if (result.documents && result.documents.length > 0) {
-        setDocuments(prev => [...result.documents, ...prev]);
-        const firstDoc = result.documents[0];
-        setCurrentScope(firstDoc._id || firstDoc.id);
+        setDocuments((prev) => [...result.documents, ...prev]);
+        if (uploadedDocIds.length > 1) {
+          setCurrentScope(uploadedDocIds);
+        } else if (uploadedDocIds.length === 1) {
+          setCurrentScope(uploadedDocIds[0]);
+        }
       } else {
         await refreshUserDocuments();
       }
+
 
       setVectorizationState(prev => ({
         ...prev,
@@ -885,8 +918,11 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               vectorizingProgress={vectorizationState.progress}
               vectorizingMessage={vectorizationState.message}
               activeScopeName={getActiveScopeName()}
+              activeScopeDocs={getActiveScopeDocs()}
+              onRemoveScopeDoc={handleRemoveScopeDoc}
               onTriggerScopeSelect={() => {}}
             />
+
           </>
         )}
       </div>

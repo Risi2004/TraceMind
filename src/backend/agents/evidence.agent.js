@@ -43,6 +43,10 @@ ${passagesText}
 Extract verified facts in JSON:`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -53,9 +57,14 @@ Extract verified facts in JSON:`;
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.1, num_ctx: 6144 },
+        format: 'json',
+        options: { temperature: 0.1, num_predict: 384, num_ctx: 4096 },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       throw new Error(`Evidence LLM call failed with HTTP ${response.status}`);
@@ -82,11 +91,14 @@ Extract verified facts in JSON:`;
       analyzedChunksCount: newChunks.length,
     };
   } catch (err) {
-    console.warn(`[Evidence Agent Notice]: ${err.message}`);
+    console.warn(`[Evidence Agent Notice]: ${err.message}. Using direct chunk extraction.`);
+    const fallbackFacts = (newChunks || []).slice(0, 5).map(
+      (c) => `[${c.fileName}, Page ${c.pageNumber || 1}]: ${c.chunkText.slice(0, 300)}`
+    );
     return {
       round: currentRound,
-      extractedFacts: newChunks.map(c => `Passage from ${c.fileName} (Page ${c.pageNumber || 1})`),
-      summary: `Analyzed ${newChunks.length} document chunk(s).`,
+      extractedFacts: fallbackFacts,
+      summary: `Extracted ${fallbackFacts.length} factual passage(s) from retrieved documents.`,
       analyzedChunksCount: newChunks.length,
     };
   }

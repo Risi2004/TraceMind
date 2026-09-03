@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   SparklesIcon,
   CopyIcon,
@@ -29,10 +31,11 @@ export const MessageList = ({
   };
 
   // Helper to parse text with embedded citation tags [cit-X]
-  const renderMessageContent = (content) => {
-    if (!content) return null;
-
+  const renderWithCitations = (content) => {
+    if (typeof content !== 'string') return content;
     const parts = content.split(/(\[cit-\d+\])/g);
+
+    if (parts.length === 1) return content;
 
     return parts.map((part, index) => {
       const match = part.match(/\[(cit-\d+)\]/);
@@ -52,9 +55,61 @@ export const MessageList = ({
           </button>
         );
       }
-      return <span key={index}>{part}</span>;
+      return part;
     });
   };
+
+  // Custom markdown components for dark theme and citation tag support
+  const markdownComponents = {
+    p: ({ children }) => (
+      <p className="md-paragraph">
+        {Array.isArray(children)
+          ? children.map((child, i) => (typeof child === 'string' ? renderWithCitations(child) : child))
+          : typeof children === 'string'
+          ? renderWithCitations(children)
+          : children}
+      </p>
+    ),
+    strong: ({ children }) => <strong className="md-strong">{children}</strong>,
+    em: ({ children }) => <em className="md-em">{children}</em>,
+    blockquote: ({ children }) => <blockquote className="md-blockquote">{children}</blockquote>,
+    ul: ({ children }) => <ul className="md-ul">{children}</ul>,
+    ol: ({ children }) => <ol className="md-ol">{children}</ol>,
+    li: ({ children }) => (
+      <li className="md-li">
+        {Array.isArray(children)
+          ? children.map((child, i) => (typeof child === 'string' ? renderWithCitations(child) : child))
+          : typeof children === 'string'
+          ? renderWithCitations(children)
+          : children}
+      </li>
+    ),
+    h1: ({ children }) => <h1 className="md-h1">{children}</h1>,
+    h2: ({ children }) => <h2 className="md-h2">{children}</h2>,
+    h3: ({ children }) => <h3 className="md-h3">{children}</h3>,
+    h4: ({ children }) => <h4 className="md-h4">{children}</h4>,
+    code: ({ inline, className, children, ...props }) => {
+      if (inline) {
+        return <code className="md-inline-code" {...props}>{children}</code>;
+      }
+      return (
+        <pre className="md-code-block">
+          <code className={className} {...props}>
+            {children}
+          </code>
+        </pre>
+      );
+    },
+    a: ({ href, children }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="md-link">
+        {children}
+      </a>
+    ),
+    table: ({ children }) => <table className="md-table">{children}</table>,
+    th: ({ children }) => <th className="md-th">{children}</th>,
+    td: ({ children }) => <td className="md-td">{children}</td>,
+  };
+
 
   // Empty State with Welcome & Suggestions
   if (messages.length === 0 && !isLoading) {
@@ -118,8 +173,18 @@ export const MessageList = ({
             {/* Content Card */}
             <div className={`message-bubble ${msg.role}`}>
               <div className="message-text">
-                {renderMessageContent(msg.content)}
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={markdownComponents}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  <span className="user-message-content">{msg.content}</span>
+                )}
               </div>
+
 
               {/* Verified Sources Accordion */}
               {showCitations && msg.role === 'assistant' && msg.citations && (

@@ -8,7 +8,7 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
 export const searchRag = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { query, documentId, topK, scoreThreshold } = req.body;
+    const { query, documentId, documentIds, topK, scoreThreshold } = req.body;
 
     if (!query || typeof query !== 'string' || !query.trim()) {
       return res.status(400).json({
@@ -17,10 +17,11 @@ export const searchRag = async (req, res) => {
       });
     }
 
+    const scope = documentIds || documentId;
     const result = await retrieveRelevantChunks({
       query: query.trim(),
       userId,
-      documentId: documentId && documentId !== 'all' ? documentId : undefined,
+      documentId: scope && scope !== 'all' ? scope : undefined,
       topK: topK ? parseInt(topK, 10) : undefined,
       scoreThreshold: scoreThreshold !== undefined ? parseFloat(scoreThreshold) : undefined,
     });
@@ -48,7 +49,7 @@ export const searchRag = async (req, res) => {
 export const queryRag = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { query, documentId, chatHistory = [], maxRounds } = req.body;
+    const { query, documentId, documentIds, chatHistory = [], maxRounds } = req.body;
 
     if (!query || typeof query !== 'string' || !query.trim()) {
       return res.status(400).json({
@@ -57,13 +58,15 @@ export const queryRag = async (req, res) => {
       });
     }
 
+    const scope = documentIds || documentId;
     const result = await executeAdkInvestigation({
       query: query.trim(),
       userId,
-      documentId: documentId && documentId !== 'all' ? documentId : undefined,
+      documentId: scope && scope !== 'all' ? scope : undefined,
       chatHistory,
       maxRounds: maxRounds ? parseInt(maxRounds, 10) : 4,
     });
+
 
     return res.status(200).json(result);
   } catch (error) {

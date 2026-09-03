@@ -26,6 +26,11 @@ User Question: "${question}"
 Generate the JSON investigation plan:`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+
+
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -36,9 +41,14 @@ Generate the JSON investigation plan:`;
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.1, num_ctx: 4096 },
+        format: 'json',
+        options: { temperature: 0.1, num_predict: 256, num_ctx: 2048 },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       throw new Error(`Planner LLM call failed with HTTP ${response.status}`);

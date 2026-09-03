@@ -72,6 +72,10 @@ ${passagesSummary}
 Analyze conflicts and reliability in JSON:`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -82,9 +86,14 @@ Analyze conflicts and reliability in JSON:`;
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.1, num_ctx: 6144 },
+        format: 'json',
+        options: { temperature: 0.1, num_predict: 256, num_ctx: 3072 },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       throw new Error(`Conflict LLM call failed with HTTP ${response.status}`);
