@@ -17,52 +17,63 @@ export const extractTextFromPdf = async (buffer) => {
   const pages = [];
   let pageIndex = 1;
 
-  // Custom page renderer to track individual page contents
-  const customPageRender = (pageData) => {
-    return pageData.getTextContent().then((textContent) => {
-      let lastY;
-      let pageText = '';
-      for (const item of textContent.items) {
-        if (lastY === undefined || lastY === item.transform[5]) {
-          pageText += (pageText && !pageText.endsWith(' ') ? ' ' : '') + item.str;
-        } else {
-          pageText += '\n' + item.str;
+  try {
+    // Custom page renderer to track individual page contents
+    const customPageRender = (pageData) => {
+      return pageData.getTextContent().then((textContent) => {
+        let lastY;
+        let pageText = '';
+        for (const item of textContent.items) {
+          if (lastY === undefined || lastY === item.transform[5]) {
+            pageText += (pageText && !pageText.endsWith(' ') ? ' ' : '') + item.str;
+          } else {
+            pageText += '\n' + item.str;
+          }
+          lastY = item.transform[5];
         }
-        lastY = item.transform[5];
-      }
 
-      pages.push({
-        pageNumber: pageIndex++,
-        text: pageText.trim(),
-      });
-
-      return pageText;
-    });
-  };
-
-  const parsed = await pdfParse(buffer, {
-    pagerender: customPageRender,
-  });
-
-  // If custom pagerender didn't populate individual pages, fallback to form-feed split
-  if (pages.length === 0 && parsed.text) {
-    const rawPages = parsed.text.split(/\f/g);
-    rawPages.forEach((text, i) => {
-      if (text.trim()) {
         pages.push({
-          pageNumber: i + 1,
-          text: text.trim(),
+          pageNumber: pageIndex++,
+          text: pageText.trim(),
         });
-      }
-    });
-  }
 
-  return {
-    fullText: parsed.text || '',
-    pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: parsed.text || '' }],
-    totalPages: parsed.numpages || (pages.length > 0 ? pages.length : 1),
-  };
+        return pageText;
+      });
+    };
+
+    const parsed = await pdfParse(buffer, {
+      pagerender: customPageRender,
+    });
+
+    // If custom pagerender didn't populate individual pages, fallback to form-feed split
+    if (pages.length === 0 && parsed.text) {
+      const rawPages = parsed.text.split(/\f/g);
+      rawPages.forEach((text, i) => {
+        if (text.trim()) {
+          pages.push({
+            pageNumber: i + 1,
+            text: text.trim(),
+          });
+        }
+      });
+    }
+
+    return {
+      fullText: parsed.text || '',
+      pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: parsed.text || '' }],
+      totalPages: parsed.numpages || (pages.length > 0 ? pages.length : 1),
+    };
+  } catch (err) {
+    console.warn(`[PDF Parser] Custom pagerender issue, falling back to basic parsing: ${err.message}`);
+    const fallbackParsed = await pdfParse(buffer);
+    return {
+      fullText: fallbackParsed.text || '',
+      pages: [{ pageNumber: 1, text: fallbackParsed.text || '' }],
+      totalPages: fallbackParsed.numpages || 1,
+    };
+  }
 };
+
 
 /**
  * Extract raw text from a DOCX Word document buffer

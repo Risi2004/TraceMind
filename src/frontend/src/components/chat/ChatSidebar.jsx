@@ -22,6 +22,8 @@ export const ChatSidebar = ({
   onSelectView,
   onNewChat,
   onSelectHistory,
+  onDeleteHistory,
+  activeSessionId,
   onNavigate,
   user = MOCK_USER_PROFILE,
   onOpenProfile,
@@ -29,6 +31,7 @@ export const ChatSidebar = ({
   history = []
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
 
   return (
     <>
@@ -150,7 +153,7 @@ export const ChatSidebar = ({
                   <button
                     key={item.id}
                     type="button"
-                    className="history-item"
+                    className={`history-item ${activeSessionId === item.id ? 'active' : ''}`}
                     onClick={() => onSelectHistory(item)}
                     title={item.title}
                   >
@@ -164,6 +167,7 @@ export const ChatSidebar = ({
                 </div>
               )}
             </div>
+
           </div>
         )}
 

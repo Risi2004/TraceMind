@@ -19,6 +19,9 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
   }, []);
 
   const getActiveLabel = () => {
+    if (!currentScope) {
+      return 'Select Document Scope';
+    }
     if (currentScope === 'all') {
       return `All Documents (${documents.length})`;
     }
@@ -26,8 +29,9 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
     if (collection) return collection.name;
     const doc = (documents || []).find(d => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Selected Document';
-    return `All Documents (${documents.length})`;
+    return 'Select Document Scope';
   };
+
 
   const handleSelect = (scopeId) => {
     onSelectScope(scopeId);

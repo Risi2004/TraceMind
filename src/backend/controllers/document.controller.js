@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import AdmZip from 'adm-zip';
 import path from 'path';
 import Document from '../models/Document.js';
-import Chunk from '../models/Chunk.js';
 import {
   uploadBufferToR2,
   getPresignedR2ViewUrl,
@@ -10,6 +9,8 @@ import {
   getLocalFallbackBuffer,
 } from '../services/r2.service.js';
 import { processDocumentForRag } from '../services/ingestion.service.js';
+import { deleteDocumentVectors } from '../services/qdrant.service.js';
+
 
 // Allowed file extensions
 const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt', 'md', 'markdown'];
@@ -386,17 +387,18 @@ export const deleteDocument = async (req, res) => {
     // 1. Delete from Cloudflare R2
     await deleteFileFromR2({ key: document.r2Key });
 
-    // 2. Cascade delete all vector chunks associated with this document
-    await Chunk.deleteMany({ documentId: id });
+    // 2. Cascade delete all vector points from Qdrant Cloud
+    await deleteDocumentVectors(id);
 
-    // 3. Delete from MongoDB Document collection
+    // 3. Delete from MongoDB Document metadata collection
     await document.deleteOne();
 
     return res.status(200).json({
       success: true,
-      message: `Document "${document.title}" and its vector embeddings removed successfully.`,
+      message: `Document "${document.title}" and its Qdrant vector embeddings removed successfully.`,
       deletedId: id,
     });
+
   } catch (error) {
     console.error('Error in deleteDocument:', error);
     return res.status(500).json({

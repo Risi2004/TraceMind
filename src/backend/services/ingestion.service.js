@@ -1,12 +1,15 @@
 import Document from '../models/Document.js';
-import Chunk from '../models/Chunk.js';
 import { extractDocumentText } from './extractor.service.js';
 import { createDocumentChunks } from './chunking.service.js';
 import { generateBatchEmbeddings } from './ollama.service.js';
+import { upsertDocumentChunks, deleteDocumentVectors } from './qdrant.service.js';
+import { deleteFileFromR2 } from './r2.service.js';
 
 /**
  * RAG Ingestion Pipeline Service
- * Orchestrates text extraction -> semantic chunking -> RunPod Ollama embedding -> vector database storage
+ * Orchestrates text extraction -> semantic chunking -> RunPod Ollama Nomic embeddings -> Qdrant Cloud storage
+ * Keeps MongoDB ONLY for document metadata and processing status tracking.
+ * Automatically deletes the file from Cloudflare R2 if vectorization/processing fails.
  */
 
 export const processDocumentForRag = async ({
@@ -19,7 +22,7 @@ export const processDocumentForRag = async ({
   console.log(`\n⚙️ [RAG Pipeline] Processing document: "${filename}" (ID: ${documentId})`);
 
   try {
-    // 1. Mark document status as 'processing'
+    // 1. Mark document status as 'processing' in MongoDB
     await Document.findByIdAndUpdate(documentId, {
       status: 'processing',
       errorMessage: null,
@@ -60,50 +63,43 @@ export const processDocumentForRag = async ({
     }
 
     console.log(
-      `✅ [RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating RunPod Ollama embeddings...`
+      `✅ [RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating Nomic embeddings on RunPod Ollama...`
     );
 
-    // 4. Generate embeddings via RunPod Ollama in parallel batches
+    // 4. Generate embeddings via RunPod Ollama (Nomic Embed Text) in parallel batches
     const embeddings = await generateBatchEmbeddings(rawChunks, 4);
 
-    // 5. Save vector chunks into MongoDB
-    const chunkDocuments = rawChunks.map((chunk, index) => ({
-      documentId: chunk.documentId,
-      userId: chunk.userId,
-      chunkIndex: chunk.chunkIndex,
-      text: chunk.text,
-      pageNumber: chunk.pageNumber,
-      fileName: chunk.fileName,
-      charCount: chunk.charCount,
-      tokenCount: chunk.tokenCount,
-      embedding: embeddings[index] || [],
-      metadata: chunk.metadata,
-    }));
+    // 5. Store chunk text, embedding vectors, and metadata in Qdrant Cloud (NOT MongoDB)
+    console.log(`🔷 [RAG Pipeline] Uploading vector chunks to Qdrant Cloud...`);
+    const qdrantResult = await upsertDocumentChunks({
+      documentId,
+      userId,
+      fileName: filename,
+      chunks: rawChunks,
+      vectors: embeddings,
+    });
 
-    // Delete any stale chunks for this document before inserting
-    await Chunk.deleteMany({ documentId });
-    await Chunk.insertMany(chunkDocuments);
-
-    console.log(
-      `💾 [RAG Pipeline] Stored ${chunkDocuments.length} vector chunks in database.`
-    );
-
-    // 6. Update Document status to 'ready'
+    // 6. Only mark document 'ready' in MongoDB after all chunks are successfully stored in Qdrant
     await Document.findByIdAndUpdate(documentId, {
       status: 'ready',
       metadata: {
-        chunksCount: chunkDocuments.length,
+        chunksCount: rawChunks.length,
         totalPages: extractionResult.totalPages,
+        vectorStorage: qdrantResult.storage || 'qdrant_cloud',
         processedAt: new Date(),
       },
     });
 
-    console.log(`🎉 [RAG Pipeline] Document "${filename}" is READY for RAG!\n`);
+    console.log(
+      `🎉 [RAG Pipeline] Document "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
+    );
+
     return {
       success: true,
       documentId,
-      chunksCount: chunkDocuments.length,
+      chunksCount: rawChunks.length,
       totalPages: extractionResult.totalPages,
+      storage: qdrantResult.storage,
     };
   } catch (error) {
     console.error(
@@ -111,7 +107,20 @@ export const processDocumentForRag = async ({
       error.message
     );
 
-    // Update document status to 'failed'
+    // Clean up: Delete stored file from Cloudflare R2 on vectorization failure
+    try {
+      const failedDoc = await Document.findById(documentId);
+      if (failedDoc && failedDoc.r2Key) {
+        console.log(`🗑️ [RAG Cleanup] Deleting failed file from Cloudflare R2: "${failedDoc.r2Key}"...`);
+        await deleteFileFromR2({ key: failedDoc.r2Key });
+      }
+      // Also ensure any partial vectors are removed from Qdrant
+      await deleteDocumentVectors(documentId);
+    } catch (cleanupErr) {
+      console.warn(`[RAG Cleanup] Warning during failure cleanup: ${cleanupErr.message}`);
+    }
+
+    // Update document status to 'failed' in MongoDB
     await Document.findByIdAndUpdate(documentId, {
       status: 'failed',
       errorMessage: error.message,

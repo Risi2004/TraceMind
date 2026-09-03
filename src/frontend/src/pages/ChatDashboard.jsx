@@ -10,7 +10,9 @@ import { SourcePreviewModal } from '../components/chat/SourcePreviewModal';
 import { ProfileModal } from '../components/profile/ProfileModal';
 import { SignOutConfirmModal } from '../components/profile/SignOutConfirmModal';
 import { useAuth } from '../context/useAuth';
-import { documentsApi } from '../services/api';
+import { documentsApi, ragApi } from '../services/api';
+
+
 
 import {
   SparklesIcon,
@@ -62,13 +64,13 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [docsError, setDocsError] = useState('');
 
-  // Upload state & progress tracking
-  const [uploadState, setUploadState] = useState({
+  // Vectorization & Upload state with precise stage percentage tracking
+  const [vectorizationState, setVectorizationState] = useState({
     active: false,
     progress: 0,
+    stage: 'idle', // 'uploading' | 'processing' | 'ready' | 'error'
     filename: '',
     count: 0,
-    status: 'idle', // 'idle' | 'uploading' | 'success' | 'error'
     message: '',
   });
 
@@ -83,6 +85,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       const response = await documentsApi.getAll();
       if (response && response.documents) {
         setDocuments(response.documents);
+        return response.documents;
       }
     } catch (err) {
       console.error('Error fetching documents:', err);
@@ -92,9 +95,100 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }
   }, []);
 
+  // Poll backend while documents are being vectorized and saved into Qdrant Cloud
+  const pollVectorizationStatus = useCallback((docIds = []) => {
+    let attempts = 0;
+    const maxAttempts = 80; // 80 * 1500ms = 2 minutes timeout
+    let simulatedProgress = 35;
+
+    const intervalId = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await documentsApi.getAll();
+        if (res?.documents) {
+          setDocuments(res.documents);
+
+          const relevantDocs = docIds.length > 0
+            ? res.documents.filter((d) => docIds.includes(d._id || d.id))
+            : res.documents;
+
+          const anyProcessing = relevantDocs.some(
+            (d) => d.status === 'processing' || d.status === 'uploaded'
+          );
+          const anyFailed = relevantDocs.some((d) => d.status === 'failed');
+          const allReady =
+            relevantDocs.length > 0 && relevantDocs.every((d) => d.status === 'ready');
+
+          // CASE 1: All documents successfully indexed in Qdrant Cloud!
+          if (allReady) {
+            clearInterval(intervalId);
+            setVectorizationState((prev) => ({
+              ...prev,
+              active: true,
+              progress: 100,
+              stage: 'ready',
+              message: 'All documents vectorized & saved to Qdrant Cloud! Submit unlocked.',
+            }));
+
+            setTimeout(() => {
+              setVectorizationState((prev) => ({ ...prev, active: false }));
+            }, 4500);
+            return;
+          }
+
+          // CASE 2: Failure occurred during extraction or vectorization
+          if (anyFailed && !anyProcessing) {
+            clearInterval(intervalId);
+            const failedDoc = relevantDocs.find((d) => d.status === 'failed');
+            setVectorizationState((prev) => ({
+              ...prev,
+              active: true,
+              progress: 100,
+              stage: 'error',
+              message: failedDoc?.errorMessage || 'Vectorization processing failed.',
+            }));
+
+            setTimeout(() => {
+              setVectorizationState((prev) => ({ ...prev, active: false }));
+            }, 6000);
+            return;
+          }
+
+          // CASE 3: In progress - advance simulated progress smoothly
+          if (anyProcessing) {
+            simulatedProgress = Math.min(95, simulatedProgress + 4);
+            let stageMessage = 'Extracting text and structural pages...';
+
+            if (simulatedProgress > 50 && simulatedProgress <= 75) {
+              stageMessage = 'Generating Nomic Embeddings on RunPod GPU...';
+            } else if (simulatedProgress > 75) {
+              stageMessage = 'Indexing vector points and metadata in Qdrant Cloud...';
+            }
+
+            setVectorizationState((prev) => ({
+              ...prev,
+              active: true,
+              progress: simulatedProgress,
+              stage: 'processing',
+              message: stageMessage,
+            }));
+          }
+        }
+      } catch (pollErr) {
+        console.warn('Vectorization polling notice:', pollErr.message);
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(intervalId);
+        setVectorizationState((prev) => ({ ...prev, active: false }));
+      }
+    }, 1500);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-    documentsApi.getAll()
+    documentsApi
+      .getAll()
       .then((res) => {
         if (isMounted && res?.documents) {
           setDocuments(res.documents);
@@ -113,6 +207,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   }, []);
 
 
+
   // Handle account deletion
   const handleDeleteAccount = async (password) => {
     await deleteAccount(password);
@@ -122,7 +217,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   // Settings state with interactive controls
   const [settings, setSettings] = useState({
     theme: 'dark',
-    defaultScope: 'all',
+    defaultScope: null,
     showInvestigationPanel: true,
     showSourceCitations: true,
     showEvidenceConfidence: true,
@@ -132,13 +227,51 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   // Investigation panel state
   const [investigationOpen, setInvestigationOpen] = useState(true);
 
-  // Chat conversation state — Clean initial state (no dummy data)
+  // Chat conversation state — Clean initial state (no pre-selected document scope)
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [currentScope, setCurrentScope] = useState('all');
+  const [currentScope, setCurrentScope] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [investigationStepText, setInvestigationStepText] = useState('Searching Documents...');
   const [activeInvestigationSteps, setActiveInvestigationSteps] = useState([]);
-  const [chatHistory, setChatHistory] = useState([]);
+
+  // Persistent chat history loaded from localStorage
+  const [chatHistory, setChatHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`tracemind_chat_history_${authUser?._id || 'guest'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Sync chatHistory with localStorage whenever it changes
+  useEffect(() => {
+    if (!authUser?._id) return;
+    try {
+      localStorage.setItem(`tracemind_chat_history_${authUser._id}`, JSON.stringify(chatHistory));
+    } catch (err) {
+      console.warn('Failed to save chat history to localStorage:', err);
+    }
+  }, [chatHistory, authUser?._id]);
+
+  // Load chat history when switching users
+  useEffect(() => {
+    if (!authUser?._id) return;
+    try {
+      const saved = localStorage.getItem(`tracemind_chat_history_${authUser._id}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setChatHistory(parsed);
+        }
+      } else {
+        setChatHistory([]);
+      }
+    } catch {
+      setChatHistory([]);
+    }
+  }, [authUser?._id]);
 
   // Active Source Modal Preview
   const [selectedSource, setSelectedSource] = useState(null);
@@ -157,9 +290,13 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   // Clear chat history
   const handleClearHistory = () => {
     setMessages([]);
+    setCurrentSessionId(null);
     setActiveInvestigationSteps([]);
     setChatHistory([]);
     setIsLoading(false);
+    if (authUser?._id) {
+      localStorage.removeItem(`tracemind_chat_history_${authUser._id}`);
+    }
   };
 
   // Handle sign out
@@ -171,35 +308,32 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
   // Scope label helper
   const getActiveScopeName = () => {
+    if (!currentScope) return 'No Document Selected (Select or Upload)';
     if (currentScope === 'all') return `All Documents (${documents.length})`;
     const col = MOCK_COLLECTIONS.find(c => c.id === currentScope);
     if (col) return col.name;
     const doc = documents.find(d => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Target Document';
-    return 'All Documents';
+    return 'Target Document';
   };
 
-  // Start a new chat
+  // Start a new chat (resets active session and leaves scope open for user to select/upload)
   const handleNewChat = () => {
     handleSelectView('chat');
+    setCurrentSessionId(null);
     setMessages([]);
     setActiveInvestigationSteps([]);
     setIsLoading(false);
-    if (settings.defaultScope && settings.defaultScope !== 'all') {
-      setCurrentScope(settings.defaultScope);
-    } else {
-      setCurrentScope('all');
-    }
+    setCurrentScope(null);
   };
 
-  // Select a history conversation
+  // Select an existing conversation from recent history
   const handleSelectHistory = (historyItem) => {
     handleSelectView('chat');
-    if (historyItem.messages) {
-      setMessages(historyItem.messages);
-      setCurrentScope(historyItem.scope || 'all');
-      setActiveInvestigationSteps(historyItem.investigationSteps || []);
-    }
+    setCurrentSessionId(historyItem.id);
+    setMessages(historyItem.messages || []);
+    setCurrentScope(historyItem.scope || null);
+    setActiveInvestigationSteps(historyItem.investigationSteps || []);
   };
 
   // Document Management handlers (Cloudflare R2 + MongoDB)
@@ -208,7 +342,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       await documentsApi.delete(docId);
       setDocuments(prev => prev.filter(d => (d._id || d.id) !== docId));
       if (currentScope === docId) {
-        setCurrentScope('all');
+        setCurrentScope(null);
       }
     } catch (err) {
       console.error('Delete document failed:', err);
@@ -228,12 +362,15 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }
   };
 
+  // Select document directly from the Documents table/card to chat with it
   const handleSelectDocumentForChat = (docId) => {
-    setCurrentScope(docId);
     handleSelectView('chat');
+    setCurrentSessionId(null);
     setMessages([]);
     setActiveInvestigationSteps([]);
+    setCurrentScope(docId);
   };
+
 
   // Handle File Upload from /chat (Single, Multiple, or ZIP)
   const handleUploadFiles = async (files) => {
@@ -243,76 +380,84 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     const MAX_COMBINED_BYTES = 300 * 1024 * 1024;
     const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
 
+    const displayFilename = files.length === 1 ? files[0].name : `${files.length} files`;
+
     if (totalBytes > MAX_COMBINED_BYTES) {
-      setUploadState({
+      setVectorizationState({
         active: true,
         progress: 0,
-        filename: '',
+        stage: 'error',
+        filename: displayFilename,
         count: files.length,
-        status: 'error',
         message: `Combined upload size (${(totalBytes / (1024 * 1024)).toFixed(1)} MB) exceeds 300 MB limit.`,
       });
-      setTimeout(() => setUploadState(prev => ({ ...prev, active: false })), 4000);
+      setTimeout(() => setVectorizationState(prev => ({ ...prev, active: false })), 4000);
       return;
     }
 
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
-    setUploadState({
+    setVectorizationState({
       active: true,
-      progress: 0,
-      filename: files.length === 1 ? files[0].name : `${files.length} files`,
+      progress: 5,
+      stage: 'uploading',
+      filename: displayFilename,
       count: files.length,
-      status: 'uploading',
-      message: 'Uploading to Cloudflare R2...',
+      message: 'Uploading to Cloudflare R2 storage (0%)...',
     });
 
     try {
       const result = await documentsApi.upload(formData, (percent) => {
-        setUploadState(prev => ({
+        const uploadScaledProgress = Math.min(30, Math.round(percent * 0.3));
+        setVectorizationState(prev => ({
           ...prev,
-          progress: percent,
-          message: percent === 100 ? 'Processing & storing in R2...' : `Uploading (${percent}%)...`,
+          progress: uploadScaledProgress,
+          stage: 'uploading',
+          message: percent === 100
+            ? 'Stored in Cloudflare R2! Extracting text and pages...'
+            : `Uploading to Cloudflare R2 (${percent}%)...`,
         }));
       });
 
-      // Refresh documents list
+      const uploadedDocIds = (result.documents || []).map(d => d._id || d.id);
+
+      // Refresh documents list in state and automatically scope the active chat to the uploaded document
       if (result.documents && result.documents.length > 0) {
         setDocuments(prev => [...result.documents, ...prev]);
+        const firstDoc = result.documents[0];
+        setCurrentScope(firstDoc._id || firstDoc.id);
       } else {
         await refreshUserDocuments();
       }
 
+      setVectorizationState(prev => ({
+        ...prev,
+        progress: 35,
+        stage: 'processing',
+        message: 'Extracting text (PDF/DOCX/TXT/MD)...',
+      }));
 
-      setUploadState({
-        active: true,
-        progress: 100,
-        filename: files.length === 1 ? files[0].name : `${files.length} files`,
-        count: files.length,
-        status: 'success',
-        message: result.message || `${files.length} file(s) stored securely in Cloudflare R2!`,
-      });
+      // Start live polling until RunPod embeddings are computed and saved in Qdrant Cloud
+      pollVectorizationStatus(uploadedDocIds);
 
-      setTimeout(() => {
-        setUploadState(prev => ({ ...prev, active: false }));
-      }, 4000);
     } catch (err) {
       console.error('Upload failed:', err);
-      setUploadState({
+      setVectorizationState({
         active: true,
         progress: 0,
-        filename: '',
+        stage: 'error',
+        filename: displayFilename,
         count: files.length,
-        status: 'error',
         message: err.message || 'Failed to upload documents.',
       });
 
       setTimeout(() => {
-        setUploadState(prev => ({ ...prev, active: false }));
+        setVectorizationState(prev => ({ ...prev, active: false }));
       }, 5000);
     }
   };
+
 
   // Drag and drop events for /chat workspace
   const handleDragOver = (e) => {
@@ -324,7 +469,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
   const handleDragLeave = (e) => {
     e.preventDefault();
-    setIsDraggingOver(false);
+    if (activeView === 'chat') {
+      setIsDraggingOver(false);
+    }
   };
 
   const handleDrop = (e) => {
@@ -335,9 +482,16 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }
   };
 
-  // Send message simulation with multi-step investigation
-  const handleSendMessage = (userText, overrideScope) => {
+  // Send message to Grounded RAG Pipeline (Qdrant Retrieval + RunPod Qwen)
+  const handleSendMessage = async (userText, overrideScope) => {
+    const scopeToUse = overrideScope || currentScope;
     if (overrideScope) setCurrentScope(overrideScope);
+
+    // Maintain consistent single conversation session
+    const activeSessionId = currentSessionId || `session_${Date.now()}`;
+    if (!currentSessionId) {
+      setCurrentSessionId(activeSessionId);
+    }
 
     const userMessage = {
       id: `usr-${Date.now()}`,
@@ -349,55 +503,119 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Dynamic Multi-step reasoning simulation
-    setInvestigationStepText('Searching Documents across selected scope...');
-    setTimeout(() => {
-      setInvestigationStepText('Analyzing Evidence & Similarity Chunks...');
-    }, 600);
+    // Dynamic Multi-step investigation text updates
+    setInvestigationStepText('Computing Nomic Dense Vector Embeddings on RunPod GPU...');
+    
+    const stepTimer1 = setTimeout(() => {
+      setInvestigationStepText('Searching Qdrant Cloud Collection for Grounded Evidence...');
+    }, 800);
 
-    setTimeout(() => {
-      setInvestigationStepText('Synthesizing Grounded Verification Trace...');
-    }, 1200);
+    const stepTimer2 = setTimeout(() => {
+      setInvestigationStepText('Synthesizing Grounded Answer with Qwen LLM on RunPod...');
+    }, 2200);
 
-    setTimeout(() => {
+    try {
+      // Build conversation history format for API
+      const historyPayload = messages.slice(-6).map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      const result = await ragApi.query({
+        query: userText,
+        documentId: scopeToUse && scopeToUse !== 'all' ? scopeToUse : undefined,
+        chatHistory: historyPayload,
+      });
+
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+
       const aiReply = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        content: `I have analyzed your query across **${getActiveScopeName()}** in your secure Cloudflare R2 repository. When AI embedding & RAG ingestion pipelines are active, your exact answers will be mathematically grounded with verified page coordinates and cross-document validation.`,
-        sources: documents.slice(0, 2).map((doc, idx) => ({
-          id: `src-${idx + 1}`,
-          documentTitle: doc.title || doc.filename || 'Document',
-          page: 1,
-          relevance: 95 - idx * 6,
-          snippet: `Grounded excerpt from ${doc.filename || doc.title} retrieved from Cloudflare R2.`
+        content: result.answer,
+        sources: (result.sources || []).map((src, idx) => ({
+          id: src.pointId || `src-${idx + 1}`,
+          documentTitle: src.fileName || 'Document',
+          documentId: src.documentId,
+          page: src.pageNumber || 1,
+          chunkNumber: src.chunkNumber || idx + 1,
+          relevance: src.similarityScore ? Math.round(src.similarityScore * 100) : 85,
+          snippet: src.chunkExcerpt || src.fullText || '',
+          fullText: src.fullText,
         })),
         reasoningSummary: {
-          strategy: 'Cross-Document Synthesis & Fact Validation',
-          evidenceFound: documents.length > 0 ? documents.length : 1,
+          strategy: `Qdrant Dense Vector Retrieval (${result.totalEvidenceChunks || 0} Chunks) + Grounded Qwen Generation`,
+          evidenceFound: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
           conflictDetected: false,
-          confidence: documents.length > 0 ? 94 : 88
+          confidence: result.sources?.[0]?.similarityScore
+            ? Math.round(result.sources[0].similarityScore * 100)
+            : (result.totalEvidenceChunks > 0 ? 92 : 40),
+          model: result.model || 'qwen2.5',
         }
       };
 
       setMessages(prev => [...prev, aiReply]);
       setIsLoading(false);
 
+      // Save / Update conversation thread in persistent chat history
       if (settings.saveChatHistory) {
-        setChatHistory(prev => [
-          {
-            id: `hist-${Date.now()}`,
-            title: userText.length > 32 ? `${userText.slice(0, 32)}...` : userText,
-            date: 'Just now',
-            scope: currentScope,
-            messages: [...messages, userMessage, aiReply],
-            investigationSteps: []
-          },
-          ...prev.slice(0, 15)
-        ]);
+        setChatHistory(prev => {
+          const existingIndex = prev.findIndex(item => item.id === activeSessionId);
+          const updatedMessages = [...messages, userMessage, aiReply];
+
+          if (existingIndex >= 0) {
+            // Update existing chat thread with latest messages
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              messages: updatedMessages,
+              scope: scopeToUse,
+              lastUpdated: Date.now(),
+            };
+            return updated;
+          } else {
+            // Prepend new conversation session
+            const newSession = {
+              id: activeSessionId,
+              title: userText.length > 36 ? `${userText.slice(0, 36)}...` : userText,
+              date: 'Just now',
+              scope: scopeToUse,
+              messages: updatedMessages,
+              investigationSteps: [],
+              createdAt: Date.now(),
+              lastUpdated: Date.now(),
+            };
+            return [newSession, ...prev.slice(0, 29)];
+          }
+        });
       }
-    }, 1800);
+    } catch (err) {
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      console.error('RAG Query Error:', err);
+
+      const errorReply = {
+        id: `ai-err-${Date.now()}`,
+        role: 'assistant',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        content: `⚠️ **Unable to generate answer:** ${err.message || 'An error occurred while communicating with the RAG pipeline or RunPod Ollama server.'}`,
+        sources: [],
+        reasoningSummary: {
+          strategy: 'RAG Error Handler',
+          evidenceFound: 0,
+          conflictDetected: true,
+          confidence: 0,
+        }
+      };
+
+      setMessages(prev => [...prev, errorReply]);
+      setIsLoading(false);
+    }
   };
+
+
 
   return (
     <div
@@ -433,7 +651,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         onOpenProfile={() => setProfileModalOpen(true)}
         onOpenSignOut={() => setSignOutModalOpen(true)}
         history={chatHistory}
+        activeSessionId={currentSessionId}
       />
+
 
       {/* 2. Main Workspace */}
       <div className="dashboard-main-area">
@@ -556,28 +776,52 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           </div>
         </header>
 
-        {/* Floating Upload Notification Status Banner */}
-        {uploadState.active && (
-          <div className={`dashboard-upload-banner ${uploadState.status}`}>
-            <div className="upload-banner-icon">
-              {uploadState.status === 'uploading' && <div className="upload-spinner" />}
-              {uploadState.status === 'success' && <CheckCircleIcon size={18} />}
-              {uploadState.status === 'error' && <AlertCircleIcon size={18} />}
-            </div>
-
-            <div className="upload-banner-info">
-              <span className="upload-banner-title">{uploadState.filename || 'Document Upload'}</span>
-              <span className="upload-banner-message">{uploadState.message}</span>
-            </div>
-
-            {uploadState.status === 'uploading' && (
-              <div className="upload-banner-progress-bar">
-                <div
-                  className="upload-banner-progress-fill"
-                  style={{ width: `${uploadState.progress}%` }}
-                />
+        {/* Top Vectorization Progress Bar & Status Tracker */}
+        {vectorizationState.active && (
+          <div className={`top-vectorization-banner ${vectorizationState.stage}`}>
+            <div className="top-vectorization-content">
+              <div className="vector-stage-left">
+                <div className="vector-icon-badge">
+                  {vectorizationState.stage === 'ready' ? (
+                    <CheckCircleIcon size={16} />
+                  ) : vectorizationState.stage === 'error' ? (
+                    <AlertCircleIcon size={16} />
+                  ) : (
+                    <div className="vector-spinner-ring" />
+                  )}
+                </div>
+                <div className="vector-text-group">
+                  <div className="vector-title-row">
+                    <span className="vector-title">
+                      {vectorizationState.stage === 'ready'
+                        ? 'Vectorization Complete'
+                        : vectorizationState.stage === 'error'
+                        ? 'Vectorization Failed'
+                        : `Vectorizing: ${vectorizationState.filename || 'Documents'}`}
+                    </span>
+                    <span className="vector-percent-tag">
+                      {Math.round(vectorizationState.progress)}%
+                    </span>
+                  </div>
+                  <p className="vector-subtitle">{vectorizationState.message}</p>
+                </div>
               </div>
-            )}
+
+              <div className="vector-stage-right">
+                <span className="vector-engine-tag">
+                  <SparklesIcon size={12} />
+                  <span>Nomic • Qdrant Cloud</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Track Line */}
+            <div className="vector-progress-track">
+              <div
+                className={`vector-progress-bar-fill ${vectorizationState.stage}`}
+                style={{ width: `${vectorizationState.progress}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -625,13 +869,20 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               onSendMessage={(text) => handleSendMessage(text)}
               onUploadFiles={handleUploadFiles}
               disabled={isLoading}
-              isUploading={uploadState.active && uploadState.status === 'uploading'}
+              isUploading={vectorizationState.active && vectorizationState.stage === 'uploading'}
+              isVectorizing={
+                vectorizationState.active &&
+                (vectorizationState.stage === 'processing' || vectorizationState.stage === 'uploading')
+              }
+              vectorizingProgress={vectorizationState.progress}
+              vectorizingMessage={vectorizationState.message}
               activeScopeName={getActiveScopeName()}
               onTriggerScopeSelect={() => {}}
             />
           </>
         )}
       </div>
+
 
       {/* 3. Right Investigation Panel (Only shown in Chat view if enabled) */}
       {activeView === 'chat' && settings.showInvestigationPanel && (

@@ -305,8 +305,178 @@
   transition: width 0.2s ease-out;
 }
 
+/* Top Vectorization Progress Bar & Status Tracker */
+.top-vectorization-banner {
+  position: relative;
+  background: rgba(13, 21, 42, 0.95);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  backdrop-filter: blur(16px);
+  padding: 0.65rem 1.5rem 0.75rem 1.5rem;
+  z-index: 30;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(245, 158, 11, 0.1);
+  animation: slideDownTop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownTop {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.top-vectorization-banner.ready {
+  border-bottom-color: rgba(16, 185, 129, 0.35);
+  background: rgba(6, 44, 34, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(16, 185, 129, 0.15);
+}
+
+.top-vectorization-banner.error {
+  border-bottom-color: rgba(239, 68, 68, 0.35);
+  background: rgba(69, 10, 10, 0.95);
+}
+
+.top-vectorization-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.vector-stage-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.vector-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+.top-vectorization-banner.ready .vector-icon-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.top-vectorization-banner.error .vector-icon-badge {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.vector-spinner-ring {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(245, 158, 11, 0.25);
+  border-top-color: #fbbf24;
+  animation: spin 0.8s linear infinite;
+}
+
+.vector-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vector-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vector-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vector-percent-tag {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+.top-vectorization-banner.ready .vector-percent-tag {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.vector-subtitle {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vector-stage-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.vector-engine-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.vector-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vector-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
+  background-size: 200% 100%;
+  animation: shimmerGradient 2s infinite linear;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vector-progress-bar-fill.ready {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.vector-progress-bar-fill.error {
+  background: #ef4444;
+}
+
+@keyframes shimmerGradient {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @media (max-width: 540px) {
   .dashboard-topbar {
     padding: 0 1rem;
   }
 }
+
