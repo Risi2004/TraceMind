@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/auth.routes.js';
+import documentRoutes from './routes/document.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
 
 // Load environment variables
@@ -48,12 +49,20 @@ app.get('/api', (req, res) => {
         profile: 'PUT /api/auth/profile',
         changePassword: 'PUT /api/auth/change-password',
       },
+      documents: {
+        upload: 'POST /api/documents/upload (supports PDF, DOCX, TXT, MD, ZIP)',
+        list: 'GET /api/documents',
+        viewUrl: 'GET /api/documents/:id/view-url',
+        delete: 'DELETE /api/documents/:id',
+      },
     },
   });
 });
 
 // Mount Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/documents', documentRoutes);
+
 
 // 404 Handler
 app.use((req, res) => {

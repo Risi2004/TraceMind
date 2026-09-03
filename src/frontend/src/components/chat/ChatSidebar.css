@@ -220,6 +220,14 @@
   margin-top: 0.15rem;
 }
 
+.history-empty-note {
+  padding: 1rem 0.65rem;
+  text-align: center;
+  font-size: 0.775rem;
+  color: var(--color-slate-500);
+  font-style: italic;
+}
+
 /* Footer Profile */
 .chat-sidebar-footer {
   position: relative;

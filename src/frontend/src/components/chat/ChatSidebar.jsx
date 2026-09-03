@@ -3,13 +3,14 @@ import {
   LogoIcon,
   PlusIcon,
   MessageSquareIcon,
+  FileTextIcon,
   HistoryIcon,
   SettingsIcon,
   SidebarToggleIcon,
   CloseIcon
 } from '../common/Icons';
 import { UserProfileDropdown } from '../profile/UserProfileDropdown';
-import { MOCK_HISTORY, MOCK_USER_PROFILE } from '../../mock/chatMockData';
+import { MOCK_USER_PROFILE } from '../../mock/chatMockData';
 import './ChatSidebar.css';
 
 export const ChatSidebar = ({
@@ -24,7 +25,8 @@ export const ChatSidebar = ({
   onNavigate,
   user = MOCK_USER_PROFILE,
   onOpenProfile,
-  onOpenSignOut
+  onOpenSignOut,
+  history = []
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
@@ -115,6 +117,16 @@ export const ChatSidebar = ({
 
           <button
             type="button"
+            className={`nav-item ${activeView === 'documents' ? 'active' : ''}`}
+            onClick={() => onSelectView('documents')}
+            title="Document Repository"
+          >
+            <FileTextIcon size={18} />
+            {!collapsed && <span>Documents</span>}
+          </button>
+
+          <button
+            type="button"
             className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
             onClick={() => onSelectView('settings')}
             title="Settings"
@@ -133,18 +145,24 @@ export const ChatSidebar = ({
             </div>
 
             <div className="history-list">
-              {MOCK_HISTORY.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="history-item"
-                  onClick={() => onSelectHistory(item)}
-                  title={item.title}
-                >
-                  <span className="history-item-title">{item.title}</span>
-                  <span className="history-item-meta">{item.date}</span>
-                </button>
-              ))}
+              {history.length > 0 ? (
+                history.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="history-item"
+                    onClick={() => onSelectHistory(item)}
+                    title={item.title}
+                  >
+                    <span className="history-item-title">{item.title}</span>
+                    <span className="history-item-meta">{item.date}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="history-empty-note">
+                  <span>No conversations yet</span>
+                </div>
+              )}
             </div>
           </div>
         )}
