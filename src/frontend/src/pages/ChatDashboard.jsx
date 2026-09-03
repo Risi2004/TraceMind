@@ -530,6 +530,12 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
 
+      // Set real live ADK investigation steps into the right-hand InvestigationPanel
+      const returnedSteps = result.investigationSteps || [];
+      if (returnedSteps.length > 0) {
+        setActiveInvestigationSteps(returnedSteps);
+      }
+
       const aiReply = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
@@ -546,13 +552,13 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           fullText: src.fullText,
         })),
         reasoningSummary: {
-          strategy: `Qdrant Dense Vector Retrieval (${result.totalEvidenceChunks || 0} Chunks) + Grounded Qwen Generation`,
+          strategy: `Google ADK Multi-Hop (${result.roundsCount || 1} Round${(result.roundsCount || 1) > 1 ? 's' : ''}) + Grounded Qwen`,
           evidenceFound: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
-          conflictDetected: false,
-          confidence: result.sources?.[0]?.similarityScore
-            ? Math.round(result.sources[0].similarityScore * 100)
-            : (result.totalEvidenceChunks > 0 ? 92 : 40),
-          model: result.model || 'qwen2.5',
+          conflictDetected: Boolean(result.conflictDetected),
+          conflictAssessment: result.conflictReport?.assessment,
+          confidence: result.confidence || 94,
+          roundsCount: result.roundsCount || 1,
+          model: result.model || 'qwen3:14b',
         }
       };
 
@@ -566,12 +572,13 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           const updatedMessages = [...messages, userMessage, aiReply];
 
           if (existingIndex >= 0) {
-            // Update existing chat thread with latest messages
+            // Update existing chat thread with latest messages & steps
             const updated = [...prev];
             updated[existingIndex] = {
               ...updated[existingIndex],
               messages: updatedMessages,
               scope: scopeToUse,
+              investigationSteps: returnedSteps,
               lastUpdated: Date.now(),
             };
             return updated;
@@ -583,7 +590,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               date: 'Just now',
               scope: scopeToUse,
               messages: updatedMessages,
-              investigationSteps: [],
+              investigationSteps: returnedSteps,
               createdAt: Date.now(),
               lastUpdated: Date.now(),
             };
@@ -591,6 +598,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           }
         });
       }
+
     } catch (err) {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);

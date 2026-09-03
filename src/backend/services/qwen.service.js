@@ -13,9 +13,20 @@ export const getOllamaLlmModel = () => {
 };
 
 /**
- * Build a structured, grounded system & user prompt with document context blocks
+ * Build a structured, grounded system & user prompt with document context blocks and conflict disclosures
  */
-export const buildGroundedPrompt = ({ question, contextChunks = [] }) => {
+export const buildGroundedPrompt = ({ question, contextChunks = [], conflictReport = null }) => {
+  const hasConflict = Boolean(conflictReport && conflictReport.hasConflict);
+
+  const conflictRule = hasConflict
+    ? `6. CONFLICTING EVIDENCE DETECTED:
+- A contradiction or discrepancy exists across your sources:
+  Assessment: ${conflictReport.assessment}
+- You MUST explicitly explain this disagreement in your answer.
+- Cite both conflicting sources clearly with their respective file names and page numbers (e.g. "[Doc A, Page 1] states X, whereas [Doc B, Page 2] states Y").
+- State which source appears more reliable/recent based on the verified evidence, but do NOT hide the conflicting perspective.`
+    : '';
+
   const systemPrompt = `You are TraceMind AI, an elite document intelligence and verification assistant.
 
 CRITICAL GROUNDING RULES:
@@ -25,7 +36,8 @@ CRITICAL GROUNDING RULES:
 "Based on the provided documents, there is not enough information to answer this question."
 Do NOT fabricate, guess, or invent any details.
 4. When stating facts, clearly cite your sources using tags like [Source 1, Page X] or by referencing the file name and page number.
-5. Provide a well-structured, clear, professional, and direct answer with bullet points or tables where appropriate.`;
+5. Provide a well-structured, clear, professional, and direct answer with bullet points or tables where appropriate.
+${conflictRule}`.trim();
 
   if (!contextChunks || contextChunks.length === 0) {
     const userPrompt = `USER QUESTION: ${question}
@@ -51,16 +63,25 @@ ${chunk.chunkText}
     })
     .join('\n\n');
 
+  const conflictNotice = hasConflict
+    ? `\nCROSS-SOURCE CONFLICT ANALYSIS:
+- Discrepancy Type: ${conflictReport.conflictType}
+- Assessment: ${conflictReport.assessment}
+- Conflicting Sources: ${JSON.stringify(conflictReport.conflictingSources, null, 2)}
+`
+    : '';
+
   const userPrompt = `DOCUMENT EVIDENCE:
 ${evidenceBlocks}
-
+${conflictNotice}
 USER QUESTION:
 ${question}
 
-Provide a grounded, factual answer based strictly on the document evidence above:`;
+Provide a grounded, factual answer based strictly on the document evidence above (highlighting any source discrepancies if present):`;
 
   return { systemPrompt, userPrompt };
 };
+
 
 /**
  * Call RunPod Ollama Qwen model to generate a strictly grounded answer
@@ -74,6 +95,7 @@ Provide a grounded, factual answer based strictly on the document evidence above
 export const generateGroundedAnswer = async ({
   question,
   contextChunks = [],
+  conflictReport = null,
   chatHistory = [],
   temperature = 0.1,
 }) => {
@@ -89,7 +111,9 @@ export const generateGroundedAnswer = async ({
   const { systemPrompt, userPrompt } = buildGroundedPrompt({
     question,
     contextChunks,
+    conflictReport,
   });
+
 
   // Prepare messages payload for Ollama /api/chat
   const messages = [
