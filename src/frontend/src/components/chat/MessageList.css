@@ -215,12 +215,151 @@
   font-size: 0.9375rem;
   line-height: 1.65;
   color: var(--color-slate-200);
+}
+
+.user-message-content {
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-bubble.user .message-text {
   color: var(--color-white);
 }
+
+/* Markdown Typography & Formatting (TraceMind Dark Theme) */
+.md-paragraph {
+  margin-bottom: 0.85rem;
+  line-height: 1.7;
+}
+
+.md-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.md-strong {
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.md-em {
+  font-style: italic;
+  color: #cbd5e1;
+}
+
+.md-blockquote {
+  border-left: 3px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+  padding: 0.65rem 1rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+  margin: 0.85rem 0;
+  color: #e2e8f0;
+  font-style: italic;
+}
+
+.md-blockquote p {
+  margin-bottom: 0.4rem;
+}
+
+.md-blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.md-ul {
+  list-style-type: disc;
+  padding-left: 1.4rem;
+  margin: 0.5rem 0 0.85rem 0;
+}
+
+.md-ol {
+  list-style-type: decimal;
+  padding-left: 1.4rem;
+  margin: 0.5rem 0 0.85rem 0;
+}
+
+.md-li {
+  margin-bottom: 0.35rem;
+  line-height: 1.6;
+}
+
+.md-li > .md-ul,
+.md-li > .md-ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  padding-left: 1.25rem;
+}
+
+.md-h1, .md-h2, .md-h3, .md-h4 {
+  color: #ffffff;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.35;
+}
+
+.md-h1 { font-size: 1.25rem; }
+.md-h2 { font-size: 1.125rem; }
+.md-h3 { font-size: 1.025rem; }
+.md-h4 { font-size: 0.9375rem; }
+
+.md-inline-code {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.3rem;
+  padding: 0.15rem 0.4rem;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.84em;
+  color: #93c5fd;
+}
+
+.md-code-block {
+  background: #080d1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.6rem;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 0.85rem 0;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.84rem;
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+
+.md-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color var(--transition-fast);
+}
+
+.md-link:hover {
+  color: #93c5fd;
+}
+
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85rem 0;
+  font-size: 0.875rem;
+  overflow-x: auto;
+  display: block;
+}
+
+.md-th {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: left;
+}
+
+.md-td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.5rem 0.75rem;
+  color: #cbd5e1;
+}
+
 
 /* Inline Citation Tags */
 .citation-inline-tag {

@@ -1,0 +1,198 @@
+================================================================================
+TRACE-MIND AI INNOVATION CHALLENGE - AI USAGE & INTERACTION LOG
+================================================================================
+Session Title     : 04 - Cloudflare R2, RunPod Embeddings, Qdrant Vector Cloud, Google ADK Multi-Agent Orchestrator, Conflict Detection, and Evaluation Benchmark
+Tool / Assistant  : Google Antigravity (Model: Gemini 3.7 Flash)
+Session ID        : 77cb7b73-92d5-4245-9656-c3c177a4fd47
+Date & Timestamp  : 2026-09-02 to 2026-09-03 (UTC+05:30)
+================================================================================
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 1: Cloudflare R2 Document Storage & Multi-Format Upload
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Implement Cloudflare R2 document storage for TraceMind:
+1. Support uploading PDF, DOCX, TXT, Markdown, and ZIP files containing supported documents (up to 300MB).
+2. Store binary files securely in Cloudflare R2 with unique keys.
+3. Save document metadata in MongoDB (title, filename, originalName, fileType, sizeBytes, r2Key, status).
+4. Generate secure presigned view URLs for document inspection.
+5. Provide cascade deletion removing files from R2 and records from MongoDB.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Configured AWS S3 SDK client (`@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`) targeting Cloudflare R2 endpoint (`src/backend/services/r2.service.js`).
+- Created Mongoose `Document` model (`src/backend/models/Document.js`) tracking upload status, MIME types, and R2 keys.
+- Implemented `uploadDocuments`, `getUserDocuments`, `getDocumentViewUrl`, and `deleteDocument` in `src/backend/controllers/document.controller.js`.
+- Integrated ZIP extraction using `adm-zip` to unpack and store individual documents.
+- Built interactive frontend `DocumentsView.jsx` and connected drag-and-drop file uploader in `/chat`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 2: Semantic Chunking & Text Extraction
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Implement document text extraction and semantic chunking:
+1. Extract text from PDF, DOCX, TXT, and Markdown files (including inside ZIPs).
+2. Split extracted text into semantic chunks of ~1000 tokens with 10–15% overlap.
+3. Preserve headings, paragraphs, and sentence boundaries.
+4. Attach chunk metadata: userId, documentId, fileName, pageNumber, chunkNumber, tokenCount.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Built unified extractor (`src/backend/services/extractor.service.js`) with `pdf-parse@1.1.1` and `mammoth` for DOCX.
+- Implemented custom page-tracking renderer extracting page numbers and structured paragraphs.
+- Built semantic chunker (`src/backend/services/chunking.service.js`) with ~1000 target tokens, 12% sliding overlap, and heading preservation.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 3: RunPod Ollama Nomic Embeddings & Qdrant Cloud Storage
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Generate vector embeddings using Nomic Embed Text running on RunPod Ollama and store chunk text, vectors, and metadata in Qdrant Cloud (NOT MongoDB):
+- Connect to RunPod Pod via OLLAMA_BASE_URL (proxy URL on port 11434).
+- Model: nomic-embed-text (768 dimensions).
+- Store chunk text, embedding vector, and metadata in Qdrant Cloud collection `tracemind_chunks` with Cosine distance.
+- MongoDB only stores status: "ready", chunksCount, totalPages, and vectorStorage: "qdrant_cloud".
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Integrated `@qdrant/js-client-rest` and `uuid` (`src/backend/services/qdrant.service.js`).
+- Created RunPod Ollama embedding client (`src/backend/services/ollama.service.js`) generating dense 768-dim vectors.
+- Implemented `upsertDocumentChunks`, `deleteDocumentVectors` (cascade deletion on doc removal), and scoped similarity search.
+- Created payload keyword indexes on `userId` and `documentId` for strict multi-tenant isolation.
+- Built orchestrator (`src/backend/services/ingestion.service.js`) managing background vectorization pipelines.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 4: UI Vectorization Progress & Hover Tooltip
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+When a user uploads documents from the chat interface, start vectorization and show percentage complete at the top. Allow users to type their prompt while vectorization runs, but disable the submit button until vectorization finishes. When hovering over the disabled button, show a tooltip explaining why.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Built top-level animated vectorization progress banner (`ChatDashboard.jsx` & `ChatDashboard.css`) tracking live extraction, Ollama embeddings, and Qdrant storage (`0% -> 100%`).
+- Updated `ChatInput.jsx` to keep textarea interactive for prompt drafting while disabling submit button with a spinner during processing.
+- Added tooltip hover popover explaining the exact active vectorization stage and percentage.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 5: Automatic Cloudflare R2 Cleanup on Vectorization Failure
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Delete the file stored in Cloudflare R2 if the vectorization failed.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `src/backend/services/ingestion.service.js`:
+  - Added failure rollback catching any downstream errors (corrupted PDFs, timeout, or vectorization errors).
+  - Automatically invokes `deleteFileFromR2({ key: failedDoc.r2Key })` to remove the uploaded file from Cloudflare R2.
+  - Automatically cleans up any partial points from Qdrant Cloud (`deleteDocumentVectors(documentId)`).
+  - Sets MongoDB document status to `failed` and records diagnostic `errorMessage`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 6: RAG Dense Vector Retrieval Layer
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Implement the RAG retrieval / search layer:
+1. Generate an embedding for the user's question via Nomic on RunPod.
+2. Search Qdrant Cloud collection for the top 8 most relevant chunks (RAG_TOP_K=8).
+3. Return chunkText, fileName, documentId, pageNumber, chunkNumber, similarityScore.
+4. Filter using authenticated userId and optional documentId scope.
+5. Create separate reusable service and API endpoint POST /api/rag/search.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Built reusable retrieval service (`src/backend/services/retrieval.service.js`) with `retrieveRelevantChunks`.
+- Added controller `src/backend/controllers/rag.controller.js` and protected route `POST /api/rag/search` (`src/backend/routes/rag.routes.js`).
+- Verified multi-tenant isolation (searching with another user ID returns 0 chunks) and document-scoped filtering.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 7: Grounded Qwen LLM Generation & Anti-Hallucination
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Connect the retrieved chunks to the Qwen model running through Ollama on RunPod:
+1. Environment variables: OLLAMA_BASE_URL, OLLAMA_LLM_MODEL=qwen3:14b (no hardcoding).
+2. Send user question + retrieved chunks to Qwen with strict instructions to answer ONLY from document evidence.
+3. If evidence is insufficient, explicitly state that there is not enough information instead of making up an answer.
+4. Return grounded answer with verified source citations (fileName, pageNumber, documentId).
+5. Connect flow to /chat UI with clickable source citations.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Created Qwen LLM client (`src/backend/services/qwen.service.js`) communicating with RunPod Ollama `/api/chat`.
+- Enforced strict system prompt guardrails with anti-hallucination rules and inline citation requirements.
+- Built end-to-end endpoint `POST /api/rag/query` (`src/backend/controllers/rag.controller.js`).
+- Connected `/chat` UI (`ChatDashboard.jsx` & `src/frontend/src/services/api.js`) to live `ragApi.query`, rendering real assistant responses, interactive source citation badges, and confidence metrics.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 8: Chat Session Threading, Persistent History & Scoping
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+1. When selecting + New Chat, do not have all documents pre-selected; allow users to upload or select from the document section.
+2. Everything within that chat is one chat; do not create separate history entries for every prompt in the conversation.
+3. Save and persist recent conversations across browser refresh in localStorage.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `ChatDashboard.jsx` state management:
+  - Initialized `currentScope` as `null` ("Select Document Scope") on new chats.
+  - Automatically scoped active chat to newly uploaded documents upon upload completion.
+  - Implemented session identifier (`currentSessionId`) ensuring all prompts and responses stay threaded in the same conversation.
+  - Persisted chat history in `localStorage` under `tracemind_chat_history_${userId}`.
+  - Updated `ChatSidebar.jsx` to highlight active conversations and restore full conversation history on click.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 9: Google ADK Agentic Iterative Search System
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Convert the RAG workflow into an agentic iterative search system using Google ADK as the agent orchestrator.
+Use the existing Qwen model running through Ollama on RunPod.
+Create these agents:
+- Planner Agent
+- Retrieval Agent
+- Evidence Agent
+- Sufficiency Agent
+- Follow-up Search Agent
+- Answer Agent
+Google ADK coordinates the iterative loop (max 4 rounds). If evidence is insufficient, Follow-up Agent formulates a new search query and repeats. Return high-level investigation events to the frontend InvestigationPanel.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Created modular agent services in `src/backend/agents/`:
+  - `planner.agent.js`: Deconstructs user query into factual goals and primary vector query.
+  - `retrieval.agent.js`: Executes scoped Qdrant search with cross-round chunk deduplication.
+  - `evidence.agent.js`: Extracts verified claims and file citations from retrieved passages.
+  - `sufficiency.agent.js`: Evaluates evidence completeness and detects missing information.
+  - `followup.agent.js`: Generates targeted search queries focused on missing specifics.
+  - `answer.agent.js`: Synthesizes final grounded answer with inline citations.
+- Created `adkOrchestrator.js` managing the iterative state machine (Rounds 1 to 4).
+- Connected live investigation timeline milestones to `ChatDashboard.jsx` and `<InvestigationPanel />`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 10: Source Reliability and Conflict Agent
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Add a Source Reliability and Conflict Agent to:
+- Compare evidence coming from different documents.
+- Detect when two sources disagree on dates, times, rooms, numbers, or policies.
+- Identify which source appears more reliable using metadata and context.
+- Pass conflict information to Sufficiency and Answer Agents.
+- If sources conflict, the final answer must mention the disagreement and cite both sources instead of hiding the contradiction.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Created `src/backend/agents/conflict.agent.js`: Cross-examines statements across distinct documents and generates structured conflict reports (`hasConflict`, `conflictingSources`, `assessment`, `resolution`).
+- Enhanced `sufficiency.agent.js` to evaluate conflict status alongside factual completeness.
+- Enhanced `answer.agent.js` and `qwen.service.js`: Injected strict conflict disclosure instructions forcing Qwen to transparently cite both conflicting sources (e.g. `[Doc A, Page X]` vs. `[Doc B, Page Y]`).
+- Integrated into `adkOrchestrator.js` and added dynamic `conflictDetected` indicators in `/chat`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 11: Evaluation Telemetry, Configurable Parameters & Test Benchmark
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Improve evaluation, debugging, and reliability testing for the agentic pipeline:
+- Add structured logging for user question, planner goals, search queries, round numbers, retrieved document names, page numbers, similarity scores, sufficiency results, conflict results, final sources used, total rounds, and total response time.
+- Do not log hidden chain-of-thought.
+- Make important values configurable via .env (RAG_TOP_K=8, MAX_SEARCH_ROUNDS=4, ENABLE_ADK_DEBUG_LOGS=true).
+- Provide automated evaluation tests covering:
+  1. Simple question requiring one source
+  2. Question requiring information from multiple documents
+  3. Question requiring multiple search rounds
+  4. Conflicting information between documents
+  5. Question with insufficient evidence
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Added `MAX_SEARCH_ROUNDS=4`, `RAG_TOP_K=8`, and `ENABLE_ADK_DEBUG_LOGS=true` to `src/backend/.env` and `.env.example`.
+- Created structured evaluation logger (`src/backend/services/adkLogger.service.js`) with formatted diagnostic telemetry tags (`[ADK-START]`, `[ADK-PLANNER]`, `[ADK-RETRIEVAL]`, `[ADK-CONFLICT]`, `[ADK-SUFFICIENCY]`, `[ADK-FOLLOWUP]`, `[ADK-COMPLETE]`).
+- Built automated evaluation benchmark (`src/backend/test_adk_evaluation_suite.js`) validating all 5 evaluation test cases.
+
+===============================================================================
+END OF SESSION 04 LOG
+===============================================================================

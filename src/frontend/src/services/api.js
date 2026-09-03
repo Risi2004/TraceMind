@@ -172,8 +172,29 @@ export const documentsApi = {
   }),
 };
 
+/**
+ * RAG Semantic Search & Grounded Generation API (Qdrant + RunPod Qwen)
+ */
+export const ragApi = {
+  // Retrieve top relevant chunks from Qdrant Cloud
+  search: ({ query, documentId, topK }) =>
+    request('/rag/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, documentId, topK }),
+    }),
+
+  // Full Grounded RAG Query with Qwen LLM
+  query: ({ query, documentId, chatHistory, topK }) =>
+    request('/rag/query', {
+      method: 'POST',
+      body: JSON.stringify({ query, documentId, chatHistory, topK }),
+    }),
+};
+
 export default {
   auth: authApi,
   documents: documentsApi,
+  rag: ragApi,
 };
+
 

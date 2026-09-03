@@ -18,15 +18,34 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const isDocSelected = (docId) => {
+    if (!currentScope) return false;
+    if (Array.isArray(currentScope)) {
+      return currentScope.includes(docId);
+    }
+    return currentScope === docId;
+  };
+
   const getActiveLabel = () => {
+    if (!currentScope) {
+      return 'Select Document Scope';
+    }
     if (currentScope === 'all') {
       return `All Documents (${documents.length})`;
     }
-    const collection = MOCK_COLLECTIONS.find(c => c.id === currentScope);
+    if (Array.isArray(currentScope)) {
+      if (currentScope.length === 0) return 'Select Document Scope';
+      if (currentScope.length === 1) {
+        const doc = documents.find((d) => (d._id || d.id) === currentScope[0]);
+        return doc ? doc.title || doc.filename : '1 Document Selected';
+      }
+      return `${currentScope.length} Documents Selected`;
+    }
+    const collection = MOCK_COLLECTIONS.find((c) => c.id === currentScope);
     if (collection) return collection.name;
-    const doc = (documents || []).find(d => (d._id || d.id) === currentScope);
+    const doc = (documents || []).find((d) => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Selected Document';
-    return `All Documents (${documents.length})`;
+    return 'Select Document Scope';
   };
 
   const handleSelect = (scopeId) => {
@@ -34,12 +53,34 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
     setIsOpen(false);
   };
 
+  const handleToggleDoc = (docId, e) => {
+    // If shift key or already an array, toggle
+    if (Array.isArray(currentScope)) {
+      if (currentScope.includes(docId)) {
+        const next = currentScope.filter((id) => id !== docId);
+        onSelectScope(next.length === 0 ? null : next);
+      } else {
+        onSelectScope([...currentScope, docId]);
+      }
+    } else if (currentScope && currentScope !== 'all' && !MOCK_COLLECTIONS.some((c) => c.id === currentScope)) {
+      // Switch from single to multi if clicked another doc
+      if (currentScope === docId) {
+        onSelectScope(null);
+      } else {
+        onSelectScope([currentScope, docId]);
+      }
+    } else {
+      onSelectScope(docId);
+      setIsOpen(false);
+    }
+  };
+
   return (
     <div className="scope-selector-wrapper" ref={dropdownRef}>
       <button
         type="button"
         className={`scope-selector-btn ${isOpen ? 'active' : ''}`}
-        onClick={() => setIsOpen(prev => !prev)}
+        onClick={() => setIsOpen((prev) => !prev)}
         aria-expanded={isOpen}
         aria-label="Select document search scope"
       >
@@ -66,7 +107,7 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
 
           <div className="scope-dropdown-section">
             <span className="scope-section-title">Collections</span>
-            {MOCK_COLLECTIONS.map(col => (
+            {MOCK_COLLECTIONS.map((col) => (
               <button
                 key={col.id}
                 type="button"
@@ -83,23 +124,28 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
 
           {documents && documents.length > 0 && (
             <div className="scope-dropdown-section">
-              <span className="scope-section-title">Indexed Documents ({documents.length})</span>
-              {documents.map(doc => {
+              <span className="scope-section-title">
+                Indexed Documents ({documents.length})
+              </span>
+              {documents.map((doc) => {
                 const docId = doc._id || doc.id;
                 const title = doc.title || doc.filename || 'Document';
                 const size = doc.sizeFormatted || 'File';
+                const selected = isDocSelected(docId);
                 return (
                   <button
                     key={docId}
                     type="button"
-                    className={`scope-menu-item ${currentScope === docId ? 'selected' : ''}`}
-                    onClick={() => handleSelect(docId)}
+                    className={`scope-menu-item ${selected ? 'selected' : ''}`}
+                    onClick={(e) => handleToggleDoc(docId, e)}
                     role="menuitem"
                   >
                     <FileTextIcon size={15} />
-                    <span className="item-name" title={title}>{title}</span>
+                    <span className="item-name" title={title}>
+                      {title}
+                    </span>
                     <span className="item-pages">{size}</span>
-                    {currentScope === docId && <CheckIcon size={14} className="check-icon" />}
+                    {selected && <CheckIcon size={14} className="check-icon" />}
                   </button>
                 );
               })}
@@ -112,3 +158,4 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
 };
 
 export default ScopeSelector;
+

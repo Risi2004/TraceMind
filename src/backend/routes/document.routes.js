@@ -39,7 +39,7 @@ const upload = multer({
 
 // Middleware to handle multer file errors gracefully
 const handleUploadMiddleware = (req, res, next) => {
-  upload.array('files', 50)(req, res, (err) => {
+  upload.any()(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
@@ -62,6 +62,7 @@ const handleUploadMiddleware = (req, res, next) => {
 };
 
 // Document Management Endpoints
+
 router.post('/upload', protect, handleUploadMiddleware, uploadDocuments);
 router.get('/', protect, getUserDocuments);
 router.get('/:id/view-url', protect, getDocumentViewUrl);

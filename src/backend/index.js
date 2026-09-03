@@ -4,7 +4,9 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/auth.routes.js';
 import documentRoutes from './routes/document.routes.js';
+import ragRoutes from './routes/rag.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
+
 
 // Load environment variables
 dotenv.config();
@@ -55,6 +57,9 @@ app.get('/api', (req, res) => {
         viewUrl: 'GET /api/documents/:id/view-url',
         delete: 'DELETE /api/documents/:id',
       },
+      rag: {
+        search: 'POST /api/rag/search (Retrieves top K relevant chunks from Qdrant Cloud)',
+      },
     },
   });
 });
@@ -62,6 +67,8 @@ app.get('/api', (req, res) => {
 // Mount Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/rag', ragRoutes);
+
 
 
 // 404 Handler
