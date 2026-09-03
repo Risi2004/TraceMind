@@ -13,7 +13,7 @@ import './App.css';
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Client-side routing supporting /, /login, /signup, /verify-otp, /forgot-password, /chat (with hash fallback)
+  // Client-side routing supporting /, /login, /signup, /verify-otp, /forgot-password, /chat, /document, /documents, /settings (with hash fallback)
   const getInitialRoute = () => {
     const path = window.location.pathname.toLowerCase();
     if (path === '/login' || path === '/login/') return '/login';
@@ -21,14 +21,18 @@ function AppContent() {
     if (path === '/verify-otp' || path === '/verify-otp/' || path === '/verify' || path === '/verify/') return '/verify-otp';
     if (path === '/forgot-password' || path === '/forgot-password/' || path === '/forgot') return '/forgot-password';
     if (path === '/chat' || path === '/chat/') return '/chat';
+    if (path === '/document' || path === '/document/' || path === '/documents' || path === '/documents/') return '/document';
+    if (path === '/settings' || path === '/settings/') return '/settings';
 
-    // Hash fallback support (e.g. #/chat, #/login, #/verify-otp, #/forgot-password)
+    // Hash fallback support (e.g. #/chat, #/document, #/settings, #/login, #/verify-otp, #/forgot-password)
     const hash = window.location.hash.toLowerCase();
     if (hash === '#/login' || hash === '#login') return '/login';
     if (hash === '#/signup' || hash === '#signup') return '/signup';
     if (hash.startsWith('#/verify-otp') || hash.startsWith('#verify-otp') || hash.startsWith('#/verify')) return '/verify-otp';
     if (hash.startsWith('#/forgot-password') || hash.startsWith('#forgot-password') || hash.startsWith('#/forgot')) return '/forgot-password';
     if (hash === '#/chat' || hash === '#chat') return '/chat';
+    if (hash === '#/document' || hash === '#document' || hash === '#/documents' || hash === '#documents') return '/document';
+    if (hash === '#/settings' || hash === '#settings') return '/settings';
 
     return '/';
   };
@@ -49,11 +53,12 @@ function AppContent() {
     // Extract base route (e.g., /forgot-password from /forgot-password?email=...)
     const normalized = path.startsWith('/') ? path : `/${path}`;
     const baseRoute = normalized.split('?')[0].split('#')[0];
+    const canonicalRoute = (baseRoute === '/documents' || baseRoute === '/document') ? '/document' : baseRoute;
     setNavState(state || {});
-    if (window.location.pathname !== baseRoute || normalized.includes('?')) {
+    if (window.location.pathname !== canonicalRoute || normalized.includes('?')) {
       window.history.pushState(state, '', normalized);
     }
-    setCurrentRoute(baseRoute);
+    setCurrentRoute(canonicalRoute);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -88,7 +93,7 @@ function AppContent() {
 
   // Route protection resolution
   let activeView = currentRoute;
-  if (currentRoute === '/chat' && !isAuthenticated) {
+  if ((currentRoute === '/chat' || currentRoute === '/document' || currentRoute === '/settings') && !isAuthenticated) {
     activeView = '/login';
   } else if ((currentRoute === '/login' || currentRoute === '/signup' || currentRoute === '/verify-otp' || currentRoute === '/forgot-password') && isAuthenticated) {
     activeView = '/chat';
@@ -100,18 +105,22 @@ function AppContent() {
 
   return (
     <div className="app-root">
-      {activeView === '/chat' && <ChatDashboard onNavigate={navigate} />}
+      {activeView === '/chat' && <ChatDashboard onNavigate={navigate} initialView="chat" />}
+      {activeView === '/document' && <ChatDashboard onNavigate={navigate} initialView="documents" />}
+      {activeView === '/settings' && <ChatDashboard onNavigate={navigate} initialView="settings" />}
       {activeView === '/login' && <LoginPage onNavigate={navigate} />}
       {activeView === '/signup' && <SignUpPage onNavigate={navigate} />}
       {activeView === '/verify-otp' && <VerifyOtpPage onNavigate={navigate} />}
       {activeView === '/forgot-password' && (
         <ForgotPasswordPage onNavigate={navigate} prefillEmail={emailFromUrl} />
       )}
-      {activeView !== '/login' && activeView !== '/signup' && activeView !== '/verify-otp' && activeView !== '/forgot-password' && activeView !== '/chat' && (
+      {activeView !== '/login' && activeView !== '/signup' && activeView !== '/verify-otp' && activeView !== '/forgot-password' && activeView !== '/chat' && activeView !== '/document' && activeView !== '/settings' && (
         <LandingPage onNavigate={navigate} />
       )}
     </div>
   );
+
+
 }
 
 function App() {

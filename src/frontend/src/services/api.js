@@ -103,6 +103,77 @@ export const authApi = {
   }),
 };
 
+/**
+ * Document Storage & Repository API (Cloudflare R2 + MongoDB)
+ */
+export const documentsApi = {
+  // Multi-file & ZIP upload with progress callback
+  upload: (formData, onProgress) => {
+    return new Promise((resolve, reject) => {
+      const token = localStorage.getItem('tracemind_token') || sessionStorage.getItem('tracemind_token');
+      const xhr = new XMLHttpRequest();
+      const url = `${API_BASE_URL}/documents/upload`;
+
+      xhr.open('POST', url);
+
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            onProgress(percent);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        let responseData;
+        try {
+          responseData = JSON.parse(xhr.responseText);
+        } catch {
+          responseData = { message: xhr.statusText };
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(responseData);
+        } else {
+          const error = new Error(responseData?.message || `Upload failed with status ${xhr.status}`);
+          error.status = xhr.status;
+          error.data = responseData;
+          reject(error);
+        }
+      };
+
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during file upload to server.'));
+      };
+
+      xhr.send(formData);
+    });
+  },
+
+  // Get all uploaded documents for the user
+  getAll: () => request('/documents', {
+    method: 'GET',
+  }),
+
+  // Get secure presigned R2 view URL
+  getViewUrl: (id) => request(`/documents/${id}/view-url`, {
+    method: 'GET',
+  }),
+
+  // Delete document from R2 and MongoDB
+  delete: (id) => request(`/documents/${id}`, {
+    method: 'DELETE',
+  }),
+};
+
 export default {
   auth: authApi,
+  documents: documentsApi,
 };
+

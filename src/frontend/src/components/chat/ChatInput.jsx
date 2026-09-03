@@ -4,12 +4,15 @@ import './ChatInput.css';
 
 export const ChatInput = ({
   onSendMessage,
+  onUploadFiles,
   disabled = false,
+  isUploading = false,
   activeScopeName = 'All Documents',
   onTriggerScopeSelect
 }) => {
   const [text, setText] = useState('');
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Auto-resize textarea height
   useEffect(() => {
@@ -36,6 +39,17 @@ export const ChatInput = ({
     }
   };
 
+  const handleFileChange = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0 && onUploadFiles) {
+      onUploadFiles(Array.from(files));
+    }
+    // Reset file input so same file can be re-selected if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="chat-input-sticky-footer">
       <div className="chat-input-container">
@@ -57,6 +71,17 @@ export const ChatInput = ({
           </span>
         </div>
 
+        {/* Hidden File Input for Attachments */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.txt,.md,.markdown,.zip"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+          disabled={disabled || isUploading}
+        />
+
         {/* Input Bar Form */}
         <form className="chat-form-box" onSubmit={handleSubmit}>
           <textarea
@@ -74,10 +99,11 @@ export const ChatInput = ({
           <div className="chat-form-actions">
             <button
               type="button"
-              className="btn-attach"
-              onClick={() => alert("Upload document modal / attachment integration ready.")}
-              title="Attach document to active session"
-              aria-label="Attach document"
+              className={`btn-attach ${isUploading ? 'is-uploading' : ''}`}
+              onClick={() => !isUploading && fileInputRef.current?.click()}
+              title={isUploading ? "Uploading documents..." : "Attach documents (PDF, DOCX, TXT, MD, ZIP up to 300MB)"}
+              aria-label="Attach documents"
+              disabled={disabled || isUploading}
             >
               <PaperclipIcon size={18} />
             </button>
@@ -102,3 +128,5 @@ export const ChatInput = ({
     </div>
   );
 };
+
+export default ChatInput;

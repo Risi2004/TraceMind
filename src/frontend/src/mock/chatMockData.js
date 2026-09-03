@@ -6,13 +6,14 @@ export const MOCK_COLLECTIONS = [
 ];
 
 export const MOCK_DOCUMENTS = [
-  { id: 'doc-1', title: 'Q3_2025_Financial_Performance.pdf', type: 'PDF', pages: 48, collection: 'finance', size: '4.2 MB', date: '2025-10-15' },
-  { id: 'doc-2', title: 'Enterprise_Master_Services_Agreement_v3.docx', type: 'DOCX', pages: 32, collection: 'legal', size: '1.8 MB', date: '2025-09-20' },
-  { id: 'doc-3', title: 'SOC2_Type_II_Security_Audit_Report.pdf', type: 'PDF', pages: 64, collection: 'legal', size: '6.1 MB', date: '2025-11-04' },
-  { id: 'doc-4', title: 'Cloud_Architecture_Design_Spec.pdf', type: 'PDF', pages: 28, collection: 'tech', size: '3.5 MB', date: '2025-08-12' },
-  { id: 'doc-5', title: 'Global_Vendor_Risk_Assessment.pdf', type: 'PDF', pages: 18, collection: 'legal', size: '2.4 MB', date: '2025-10-01' },
-  { id: 'doc-6', title: 'Annual_Budget_Forecast_2026.xlsx', type: 'XLSX', pages: 12, collection: 'finance', size: '1.2 MB', date: '2025-12-01' }
+  { id: 'doc-1', title: 'Q3 2025 Financial Performance Report', filename: 'Q3_2025_Financial_Performance.pdf', format: 'PDF', type: 'PDF', pages: 48, collection: 'finance', size: '4.2 MB', uploadDate: 'Oct 15, 2025', date: '2025-10-15', status: 'Indexed & Verified' },
+  { id: 'doc-2', title: 'Enterprise Master Services Agreement v3', filename: 'Enterprise_Master_Services_Agreement_v3.docx', format: 'DOCX', type: 'DOCX', pages: 32, collection: 'legal', size: '1.8 MB', uploadDate: 'Sep 20, 2025', date: '2025-09-20', status: 'Indexed & Verified' },
+  { id: 'doc-3', title: 'SOC 2 Type II Security Audit Report', filename: 'SOC2_Type_II_Security_Audit_Report.pdf', format: 'PDF', type: 'PDF', pages: 64, collection: 'security', size: '6.1 MB', uploadDate: 'Nov 04, 2025', date: '2025-11-04', status: 'Indexed & Verified' },
+  { id: 'doc-4', title: 'Cloud Architecture & Design Spec', filename: 'Cloud_Architecture_Design_Spec.pdf', format: 'PDF', type: 'PDF', pages: 28, collection: 'tech', size: '3.5 MB', uploadDate: 'Aug 12, 2025', date: '2025-08-12', status: 'Indexed & Verified' },
+  { id: 'doc-5', title: 'Global Vendor Risk Assessment Framework', filename: 'Global_Vendor_Risk_Assessment.pdf', format: 'PDF', type: 'PDF', pages: 18, collection: 'legal', size: '2.4 MB', uploadDate: 'Oct 01, 2025', date: '2025-10-01', status: 'Indexed & Verified' },
+  { id: 'doc-6', title: 'Annual Budget & Headcount Forecast 2026', filename: 'Annual_Budget_Forecast_2026.xlsx', format: 'XLSX', type: 'XLSX', pages: 12, collection: 'finance', size: '1.2 MB', uploadDate: 'Dec 01, 2025', date: '2025-12-01', status: 'Indexed & Verified' }
 ];
+
 
 export const MOCK_SUGGESTIONS = [
   {

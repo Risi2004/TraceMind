@@ -1,4 +1,5 @@
-.dashboard-layout {
+.dashboard-layout,
+.dashboard-container {
   display: flex;
   height: 100vh;
   width: 100vw;
@@ -6,6 +7,7 @@
   overflow: hidden;
   position: relative;
 }
+
 
 /* Main Workspace */
 .dashboard-main-area {
@@ -159,7 +161,151 @@
   .hidden-xs {
     display: none;
   }
+}
 
+/* Drag & Drop Visual Backdrop Overlay */
+.chat-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(7, 13, 30, 0.88);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.drop-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 4rem;
+  border: 2px dashed #3b82f6;
+  border-radius: 1.5rem;
+  background: rgba(30, 58, 138, 0.25);
+  box-shadow: 0 0 50px rgba(59, 130, 246, 0.3);
+  text-align: center;
+}
+
+.drop-icon-animated {
+  color: #60a5fa;
+  margin-bottom: 1rem;
+  animation: bounceSlow 1.5s infinite ease-in-out;
+}
+
+@keyframes bounceSlow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.drop-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-white);
+  margin: 0 0 0.5rem 0;
+}
+
+.drop-subtitle {
+  font-size: 0.875rem;
+  color: #93c5fd;
+  margin: 0;
+}
+
+/* Floating Upload Notification Status Banner */
+.dashboard-upload-banner {
+  position: absolute;
+  top: 4.75rem;
+  right: 1.5rem;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+  min-width: 280px;
+  max-width: 400px;
+  overflow: hidden;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.dashboard-upload-banner.uploading {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.dashboard-upload-banner.success {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(6, 78, 59, 0.85);
+  color: #a7f3d0;
+}
+
+.dashboard-upload-banner.error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(127, 29, 29, 0.85);
+  color: #fecaca;
+}
+
+.upload-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(59, 130, 246, 0.2);
+  border-top-color: #60a5fa;
+  animation: spin 0.8s linear infinite;
+}
+
+.upload-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-banner-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upload-banner-message {
+  font-size: 0.75rem;
+  color: var(--color-slate-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upload-banner-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.upload-banner-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 0.2s ease-out;
+}
+
+@media (max-width: 540px) {
   .dashboard-topbar {
     padding: 0 1rem;
   }
