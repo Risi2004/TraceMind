@@ -193,6 +193,61 @@ Improve evaluation, debugging, and reliability testing for the agentic pipeline:
 - Created structured evaluation logger (`src/backend/services/adkLogger.service.js`) with formatted diagnostic telemetry tags (`[ADK-START]`, `[ADK-PLANNER]`, `[ADK-RETRIEVAL]`, `[ADK-CONFLICT]`, `[ADK-SUFFICIENCY]`, `[ADK-FOLLOWUP]`, `[ADK-COMPLETE]`).
 - Built automated evaluation benchmark (`src/backend/test_adk_evaluation_suite.js`) validating all 5 evaluation test cases.
 
-===============================================================================
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 12: Markdown AI Response Formatting in Chat UI
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Fix the Markdown rendering of AI responses in the existing TraceMind chat UI.
+- Backend returns responses with bold, bullet points, headers, tables, and blockquotes.
+- Replace plain text rendering `{message.content}` with `react-markdown` and `remark-gfm`.
+- Do NOT render raw HTML or use dangerouslySetInnerHTML.
+- Provide clean dark-theme typography and preserve citation badges `[cit-X]`.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Installed `react-markdown@10.1.0` and `remark-gfm@4.0.1` in `src/frontend`.
+- Updated `src/frontend/src/components/chat/MessageList.jsx` with custom Markdown component renderers for `p`, `strong`, `em`, `blockquote`, `ul`, `ol`, `code`, and `table`.
+- Added CSS styles in `MessageList.css` for blockquotes, code blocks, bullet points, and tables.
+- Preserved interactive clickable citation badges (`[cit-X]`).
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 13: Multi-File Attachment System & Multi-Document RAG Scope
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Upgrade the existing TraceMind /chat file attachment system from single-file upload to multiple-file upload:
+1. Support `<input type="file" multiple />`, drag-and-drop multiple files, staged preview tray with per-file removal (`x`), and combined 300MB validation.
+2. Backend accepts multiple files (`upload.any()`), creates separate MongoDB Document records with unique `documentId`, uploads each to Cloudflare R2 (`users/{userId}/documents/{docId}/{cleanFilename}`), and indexes independently in Qdrant Cloud.
+3. Allow chat to scope to multiple documents (`selectedDocumentIds = []`), filter in Qdrant with `userId` and `documentId: { any: [...] }`, and display active document scope chips with individual remove buttons.
+4. Partial failures must not cancel successful uploads; single-file upload remains 100% backward compatible.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `src/backend/routes/document.routes.js` with `upload.any()` supporting both multi-file array and single-file uploads up to 300MB.
+- Updated `src/backend/controllers/document.controller.js` to process and stream multiple files to R2 with dedicated keys and independent background ingestion.
+- Updated `src/backend/services/qdrant.service.js` and `rag.controller.js` to support multi-document scope filtering (`match: { any: docIds }`) with strict multi-tenant isolation.
+- Enhanced `ChatInput.jsx`, `ChatInput.css`, `ScopeSelector.jsx`, and `ChatDashboard.jsx` with staged attachment trays, multi-file drag-and-drop, combined size calculation, and active scope chips with un-scoping controls.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 14: Calibrated Reasoning Quality, Forensic Standards & Evidence Hierarchy
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Improve the reasoning quality of the TraceMind RAG/agent system without rebuilding the app:
+1. Physical Object vs Digital Identifier: Tag/beacon/log movement != physical object movement. If maintenance logs show physical cart was immobilized at CB-2 with battery removed, conclude: "The tag moved, but the physical cart did not."
+2. Person vs Credential: Credential packet logged != physical person present. (Packet replayed through R-19).
+3. Association vs Responsibility: Access, proximity, or tool installation indicates association, NOT direct operation or guilt ("strongly associated with", "not directly proven").
+4. Fact vs Unsupported Inference: Do not invent unstated motives (e.g. TP-6 caused C-7 outage; do not invent theft motive).
+5. Timeline Check: Cause must precede effect (cause time <= effect time; 22:11 event cannot cause 22:07 event).
+6. Conflict Resolution Hierarchy: Tested forensic evidence & physical records > provisional witness guesses; corrected statements > retracted initial statements; later forensic testing > initial logging ("initially recorded as X, but later forensic testing established Y").
+7. Insufficient Evidence / Abstention: Clearly state "The available evidence does not establish this."
+8. Calibrated Tone & Human-Readable Citations: [FileName, Page X], "No conflicting evidence was found among the reviewed sources."
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `src/backend/services/qwen.service.js`: Embedded the complete 15-point forensic reasoning system prompt into `buildGroundedPrompt`.
+- Updated `src/backend/agents/evidence.agent.js`: Added structured extraction classifying physical vs digital observations, credentials, and timestamps.
+- Updated `src/backend/agents/conflict.agent.js`: Implemented hierarchical conflict resolution (Physical Logs > Signals; Retractions > Initial Statements).
+- Updated `src/backend/agents/sufficiency.agent.js`: Embedded a 9-point verification checklist ensuring entity separation, timeline causality, and calibrated abstention.
+- Updated `src/backend/agents/followup.agent.js`: Formulated targeted queries for physical maintenance ledgers, forensic packet reviews, and timeline validation.
+- Validated with automated test suite covering Cases A through H with 100% rule compliance.
+
+================================================================================
 END OF SESSION 04 LOG
-===============================================================================
+================================================================================
+
