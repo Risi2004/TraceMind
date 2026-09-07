@@ -465,12 +465,13 @@
 .investigation-loading-card {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.15rem;
   background: #0d152a;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(59, 130, 246, 0.35);
   border-radius: 0.85rem;
-  padding: 1rem 1.25rem;
-  box-shadow: 0 0 20px rgba(37, 99, 235, 0.2);
+  padding: 1.15rem 1.4rem;
+  box-shadow: 0 4px 25px rgba(37, 99, 235, 0.2);
+  margin: 1.25rem 0 1.5rem 0;
 }
 
 .loading-spinner-ring {
