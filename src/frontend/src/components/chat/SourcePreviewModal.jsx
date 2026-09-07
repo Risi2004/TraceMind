@@ -27,7 +27,7 @@ export const SourcePreviewModal = ({ source, onClose }) => {
             <div>
               <h3 className="modal-doc-title" id="source-preview-title">{source.docTitle}</h3>
               <p className="modal-doc-meta">
-                {isImg ? 'Image Evidence • Qwen3-VL Forensic Vision Extraction' : `Page ${source.pageNumber} • Verified Document Citation`}
+                {isImg ? 'Image Evidence • Visual Evidence Analysis' : `Page ${source.pageNumber} • Verified Document Citation`}
               </p>
             </div>
           </div>
@@ -65,7 +65,7 @@ export const SourcePreviewModal = ({ source, onClose }) => {
               <span className="page-indicator">
                 {isImg ? 'TRACE-MIND VISION INSPECTION' : `DOCUMENT VIEWER - PAGE ${source.pageNumber}`}
               </span>
-              <span className="zoom-indicator">{isImg ? 'Qwen3-VL Multimodal Analysis' : '100% OCR Match'}</span>
+              <span className="zoom-indicator">{isImg ? 'Visual Content Analysis' : '100% Match'}</span>
             </div>
 
             <div className="passage-highlight-container">
@@ -78,7 +78,7 @@ export const SourcePreviewModal = ({ source, onClose }) => {
             <div className="page-context-mock">
               <p className="context-text-blurred">
                 {isImg
-                  ? 'Visual elements, diagrams, OCR labels, and forensic relationships extracted by Qwen3-VL:8B and indexed in Qdrant vector database.'
+                  ? 'Visual elements, diagrams, OCR labels, and forensic relationships extracted and indexed in knowledge base.'
                   : 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet.'}
               </p>
             </div>

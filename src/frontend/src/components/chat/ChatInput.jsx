@@ -270,7 +270,7 @@ export const ChatInput = ({
   const getBlockedReason = () => {
     if (sizeError) return sizeError;
     if (isVectorizing || isUploading) {
-      return `Document vectorization in progress (${Math.round(vectorizingProgress)}% complete). Please wait until embeddings are saved to Qdrant Cloud before submitting.`;
+      return `Document processing in progress (${Math.round(vectorizingProgress)}% complete). Please wait until documents are indexed before submitting.`;
     }
     if (!text.trim() && stagedFiles.length === 0) {
       return 'Type your question or attach documents to submit.';
@@ -487,14 +487,14 @@ export const ChatInput = ({
                 <div className="vectorize-blocked-tooltip" role="tooltip">
                   <div className="tooltip-header">
                     <AlertCircleIcon size={14} />
-                    <span>{sizeError ? 'Upload Limit Exceeded' : 'Vectorization in Progress'}</span>
+                    <span>{sizeError ? 'Upload Limit Exceeded' : 'Processing in Progress'}</span>
                   </div>
                   <p className="tooltip-body">
                     {sizeError ||
                       vectorizingMessage ||
-                      `Processing embeddings on RunPod GPU (${Math.round(
+                      `Processing document embeddings (${Math.round(
                         vectorizingProgress
-                      )}%). Submit will unlock automatically when saved to Qdrant.`}
+                      )}%). Submit will unlock automatically when indexing is complete.`}
                   </p>
                   {!sizeError && (
                     <div className="tooltip-progress-mini">
@@ -516,7 +516,7 @@ export const ChatInput = ({
             <span className="notice-icon">⚡</span>
             <span>
               <strong>Draft your prompt:</strong> You can type your question right now. The send
-              button will unlock automatically once embeddings are stored in Qdrant Cloud.
+              button will unlock automatically once document processing is complete.
             </span>
           </div>
         )}

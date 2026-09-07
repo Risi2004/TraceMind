@@ -413,7 +413,7 @@ export const runVisionAgent = async ({
       documentId,
       pageNumber,
       imageIndex,
-      errorMessage: 'Ollama RunPod host offline.',
+      errorMessage: 'Visual reasoning service temporarily offline.',
     });
     emitEvent('VISUAL_TEXT_EXTRACTED', 'Visible text and labels detected', { labelsCount: 2 });
     emitEvent('VISION_ANALYSIS_COMPLETED', 'Visual evidence extracted', { confidence: 'medium' });

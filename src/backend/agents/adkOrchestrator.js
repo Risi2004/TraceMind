@@ -127,7 +127,7 @@ export const executeAdkInvestigation = async ({
       icon: 'search',
       status: 'completed',
       query: currentSearchQuery,
-      details: `Retrieved ${retrievalResult.newChunks.length} new unique evidence passage(s) from Qdrant Cloud.`,
+      details: `Retrieved ${retrievalResult.newChunks.length} new unique evidence passage(s) from knowledge base.`,
       pagesCount: retrievalResult.newChunks.length,
     });
 
@@ -143,7 +143,7 @@ export const executeAdkInvestigation = async ({
       },
     });
 
-    // 2B. Dedicated Google ADK Vision Agent (Invoke ONLY if visual/image content is retrieved)
+    // 2B. Dedicated Vision Agent (Invoke ONLY if visual/image content is retrieved)
     const imageChunks = (retrievalResult.newChunks || []).filter(
       (chunk) =>
         chunk.isImage ||
@@ -166,7 +166,7 @@ export const executeAdkInvestigation = async ({
         title: `Vision Agent Evidence Inspection (Round ${currentRound})`,
         icon: 'image',
         status: 'completed',
-        details: visionResult.structuredEvidence?.summary || `Examined ${imageChunks.length} visual asset(s) with Qwen3-VL:8B.`,
+        details: visionResult.structuredEvidence?.summary || `Examined ${imageChunks.length} visual asset(s) with visual analysis engine.`,
         found:
           visionResult.structuredEvidence?.importantFacts && visionResult.structuredEvidence.importantFacts.length > 0
             ? visionResult.structuredEvidence.importantFacts.slice(0, 2).join(' • ')
@@ -182,7 +182,7 @@ export const executeAdkInvestigation = async ({
         metadata: {
           confidence: visionResult.structuredEvidence?.confidence || 'high',
           visualChunksCount: imageChunks.length,
-          model: getVisionAgentModel(),
+          model: 'Visual Reasoning Engine',
         },
       });
 
@@ -464,7 +464,7 @@ export const executeAdkInvestigation = async ({
       conflictDetected: Boolean(conflictReport && conflictReport.hasConflict),
       conflictsCount: conflictReport.hasConflict ? (conflictReport.conflictingSources?.length || 1) : 0,
     },
-    model: getOllamaLlmModel(),
+    model: 'TraceMind AI Engine',
     timestamp: new Date().toISOString(),
   };
 };

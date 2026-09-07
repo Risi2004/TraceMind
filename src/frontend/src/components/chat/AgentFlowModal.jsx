@@ -28,14 +28,14 @@ const AGENT_CONFIG = {
     color: '#3b82f6',
     emissive: '#1d4ed8',
     icon: SearchIcon,
-    description: 'Executes dense vector search in Qdrant Cloud',
+    description: 'Searches knowledge base for relevant document passages',
   },
   vision: {
     label: 'Vision Agent',
     color: '#06b6d4',
     emissive: '#0891b2',
     icon: ImageIcon,
-    description: 'Inspects visual evidence, OCR, schematics & diagrams with Qwen3-VL:8b',
+    description: 'Inspects visual evidence, OCR, schematics & diagrams',
   },
   evidence: {
     label: 'Evidence Agent',
@@ -543,7 +543,7 @@ export const AgentFlowModal = ({ isOpen, onClose, flowData }) => {
                 )}
               </div>
               <p className="agent-flow-subtitle">
-                Interactive 3D trace of the real Google ADK multi-agent execution
+                Interactive 3D trace of multi-agent reasoning flow
               </p>
             </div>
           </div>

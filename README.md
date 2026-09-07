@@ -1,102 +1,506 @@
 # TraceMind 🧠
+### *Autonomous Multi-Agent Forensic Document Intelligence & Calibrated Reasoning System*
 
-> **AI Innovation Challenge Project**
-
-TraceMind is a full-stack AI-driven web application featuring an Express.js backend and a modern React (Vite) frontend.
+[![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-v19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-v8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+[![Express](https://img.shields.io/badge/Express-v5-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com/)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Vector_Database-DC2626?style=flat-square&logo=qdrant&logoColor=white)](https://qdrant.tech/)
+[![Cloudflare R2](https://img.shields.io/badge/Cloudflare-R2_Storage-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://www.cloudflare.com/products/r2/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local/Remote_AI-000000?style=flat-square&logo=ollama&logoColor=white)](https://ollama.com/)
 
 ---
 
-## 📁 Repository Structure
+## 📖 Table of Contents
+
+- [Overview](#-overview)
+- [System Architecture](#-system-architecture)
+- [Multi-Agent Orchestration Flow](#-multi-agent-orchestration-flow)
+- [Key Features](#-key-features)
+- [Prerequisites & Infrastructure](#-prerequisites--infrastructure)
+- [RunPod & Ollama GPU Setup](#-runpod--ollama-gpu-setup)
+- [Installation & Local Setup](#-installation--local-setup)
+- [Environment Configuration](#-environment-configuration)
+- [Running the Application](#-running-the-application)
+- [API Reference](#-api-reference)
+- [Project Directory Structure](#-project-directory-structure)
+- [Verification & Testing](#-verification--testing)
+- [Troubleshooting & FAQ](#-troubleshooting--faq)
+- [License](#-license)
+
+---
+
+## 🌟 Overview
+
+**TraceMind** is an enterprise-grade, multi-agent AI document intelligence and forensic reasoning platform. Unlike traditional single-pass RAG (Retrieval-Augmented Generation) systems that struggle with multi-hop questions, complex visual layouts, and speculative hallucinations, TraceMind utilizes an **iterative multi-agent reasoning loop** grounded in strict epistemic restraint.
+
+TraceMind autonomously breaks down complex inquiries, searches multi-format documents (PDFs, Word docs, images, manifests, handwritten notes, and ZIP archives), evaluates evidence across a 4-tier calibration scale, resolves inter-document contradictions, and generates fully auditable, grounded conclusions.
+
+---
+
+## 🏗 System Architecture
 
 ```text
-TraceMind/
-├── .gitignore                    # Consolidated repository-wide git ignore rules
-├── README.md                     # Main project guide
-├── package.json                  # Root monorepo scripts & workspaces
-├── ai_usage/                     # Challenge audit trail & AI interaction logs
-│   └── antigravity/
-│       └── 01-project-setup.txt
-├── configuration-example/        # Sample environment templates
-│   └── .env.example
-├── docs/                         # Architecture, API specs, and design documentation
-│   └── README.md
-└── src/
-    ├── backend/                  # Express.js API Service (ES Modules)
-    │   ├── index.js              # Server entry point & health check endpoints
-    │   ├── package.json          # Backend dependencies & scripts
-    │   └── .env.example          # Backend environment template
-    └── frontend/                 # React SPA (Vite + React 19)
-        ├── index.html            # SPA entry HTML
-        ├── vite.config.js        # Vite & React Compiler configuration
-        ├── package.json          # Frontend dependencies & scripts
-        ├── .env.example          # Frontend environment template
-        └── src/                  # React components and styling
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        TraceMind React Frontend                         │
+│   (React 19 + Vite + Modern Glassmorphism + Three.js Neural Visualizer) │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ HTTP REST / SSE Telemetry
+┌────────────────────────────────────▼────────────────────────────────────┐
+│                    TraceMind Backend Express API                        │
+│ ┌─────────────────────────────────────────────────────────────────────┐ │
+│ │                  ADK Multi-Agent Orchestrator                       │ │
+│ │  ┌───────────────┐  ┌──────────────────┐  ┌───────────────────────┐ │ │
+│ │  │ Planner Agent │  │ Retrieval Agent  │  │ Vision Analyst Agent  │ │ │
+│ │  └───────┬───────┘  └────────┬─────────┘  └──────────┬────────────┘ │ │
+│ │          │                   │                       │              │ │
+│ │  ┌───────▼───────┐  ┌────────▼─────────┐  ┌──────────▼────────────┐ │ │
+│ │  │Evidence Agent │  │ Conflict Agent   │  │ Sufficiency Agent     │ │ │
+│ │  └───────┬───────┘  └────────┬─────────┘  └──────────┬────────────┘ │ │
+│ │          │                   │                       │              │ │
+│ │  ┌───────▼───────────────────▼───────────────────────▼────────────┐ │ │
+│ │  │          Answer Synthesis & Follow-up Agents                   │ │ │
+│ │  └────────────────────────────────────────────────────────────────┘ │ │
+│ └─────────────────────────────────────────────────────────────────────┘ │
+└─────────┬───────────────────────┬───────────────────────────┬───────────┘
+          │                       │                           │
+          ▼                       ▼                           ▼
+┌──────────────────┐    ┌──────────────────┐    ┌─────────────────────────┐
+│  Cloudflare R2   │    │  Qdrant Vector   │    │      RunPod GPU         │
+│  Object Storage  │    │     Database     │    │  (Ollama AI Engine)     │
+│ (Raw Docs/Images)│    │ (Dense Embeddings│    │  - qwen3:14b            │
+│                  │    │  + Metadata)     │    │  - qwen3-vl:8b          │
+│                  │    │                  │    │  - nomic-embed-text     │
+└──────────────────┘    └──────────────────┘    └─────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🤖 Multi-Agent Orchestration Flow
 
-- **Frontend**: [React 19](https://react.dev/), [Vite 8](https://vite.dev/), Modern CSS, ESLint
-- **Backend**: [Node.js](https://nodejs.org/) (ESM), [Express 5](https://expressjs.com/), CORS, Dotenv
-- **Architecture**: Monorepo with isolated `src/frontend` and `src/backend` workspaces
+TraceMind employs an 8-agent collaborative loop built upon the Google ADK (Agent Development Kit) design pattern:
+
+```mermaid
+flowchart TD
+    UserQuery([User Inquiry]) --> Planner[1. Planner Agent\nDeconstructs intent into sub-queries]
+    
+    subgraph MultiHopLoop [Iterative Investigation Loop - Up to 4 Rounds]
+        Planner --> Retrieval[2. Retrieval Agent\nVector search on Qdrant]
+        Retrieval --> Vision[3. Vision Agent\n5-Region visual parsing: maps, manifests, OCR]
+        Vision --> Evidence[4. Evidence Agent\n4-Tier claim calibration]
+        Evidence --> Conflict[5. Conflict Agent\nCross-source consistency & discrepancy check]
+        Conflict --> Sufficiency[6. Sufficiency Agent\nConfidence scoring & gap analysis]
+        
+        Sufficiency -- "Insufficient (Confidence < 85%)" --> Followup[7. Follow-up Agent\nGenerates targeted secondary search]
+        Followup --> Retrieval
+    end
+    
+    Sufficiency -- "Sufficient or Max Rounds Reached" --> Answer[8. Answer Synthesis Agent\nGrounded response with strict epistemic restraint]
+    Answer --> FinalOutput([Audited Calibrated Response + Source Preview])
+```
+
+### 🔬 The 8 Specialized Agents:
+1. **Planner Agent**: Analyzes user questions, detects document modalities, and formulates an initial search strategy.
+2. **Retrieval Agent**: Performs dense semantic similarity searches against the Qdrant Cloud vector index.
+3. **Vision Agent**: Uses multi-region visual intelligence (`qwen3-vl:8b`) to extract fine details from maps, routes, distances, harbor photos, shipping manifests, item IDs, handwritten notes, and legends.
+4. **Evidence Evaluation Agent**: Classifies extracted claims into 4 epistemological tiers:
+   - `VERIFIED FACT`: Explicitly written or directly visible in sources.
+   - `STRONG INFERENCE`: Strongly corroborated across independent records.
+   - `POSSIBLE INFERENCE`: Plausible hypotheses not yet directly proven.
+   - `UNKNOWN / NOT ESTABLISHED`: Insufficient evidence to substantiate.
+5. **Conflict Resolution Agent**: Detects contradictions, dates/route mismatches, or conflicting identifiers across multiple files.
+6. **Information Sufficiency Agent**: Dynamically computes evidence completeness scores and determines if another search round is required.
+7. **Follow-up Agent**: Reformulates focused search queries to fill identified knowledge gaps.
+8. **Answer Synthesis Agent**: Compiles the final response adhering to strict epistemic constraints—ensuring inferences are never presented as facts and prohibiting ungrounded speculative terms.
 
 ---
 
-## 🚀 Quick Start
+## ✨ Key Features
 
-### 1. Prerequisites
-- **Node.js**: v18.0.0 or later (v20+ recommended)
-- **npm**: v9.0.0 or later
+- **Multi-Format Document Ingestion**: Seamlessly process and extract text from `PDF`, `DOCX`, `TXT`, `MD`, `PNG`, `JPG`, `WEBP`, and multi-file `ZIP` archives.
+- **5-Region Visual Intelligence**: Full OCR and spatial reasoning across complex visual documents:
+  - *Region 1: Map / Cartographic Areas* (routes, distances, arrows, waypoints)
+  - *Region 2: Photographic Records* (facility identifiers, crate labels, environmental context)
+  - *Region 3: Structured Tables / Manifests* (item IDs, quantities, origin, destination)
+  - *Region 4: Handwritten Annotations* (stamps, margins, handwritten corrections)
+  - *Region 5: Legends & Footnotes* (symbology, classification scales, measurement keys)
+- **Direct Clipboard Screenshot Pasting**: Capture screenshots via `Win + Shift + S` or `Cmd + Shift + 4` and paste them directly (`Ctrl + V`) into the chat input for instant OCR, vectorization, and reasoning.
+- **Real-Time 3D Agent Flow Visualizer**: Interactive Three.js neural visualizer that maps real-time agent execution rounds, confidence metrics, and evidence state transitions.
+- **Enterprise Storage & Vector Search**: Cloudflare R2 object storage with pre-signed direct streaming and Qdrant Cloud vector indexing with Nomic embeddings.
+- **Comprehensive User Auth & Audit Trail**: JWT session authentication, bcrypt password hashing, SMTP email verification, and complete document management.
 
-### 2. Installation
-Install dependencies for both frontend and backend from the root directory:
+---
+
+## 📋 Prerequisites & Infrastructure
+
+Before running TraceMind, ensure you have the following installed and configured:
+
+| Component | Minimum Version | Notes |
+| :--- | :--- | :--- |
+| **Node.js** | `v18.0.0` or higher | Recommended `v20.x LTS` or `v22.x` |
+| **npm** | `v9.0.0` or higher | Included with Node.js |
+| **MongoDB** | `v6.0+` | Local instance or [MongoDB Atlas](https://www.mongodb.com/atlas) cluster |
+| **Qdrant** | `v1.9+` | [Qdrant Cloud](https://cloud.qdrant.io/) cluster or self-hosted |
+| **Cloudflare R2** | — | S3-compatible bucket for raw file storage |
+| **SMTP Service** | — | [Mailtrap](https://mailtrap.io/) (dev) or Gmail/SendGrid (prod) |
+| **GPU Instance** | — | [RunPod](https://runpod.io/) (L40 48GB / RTX 4090 / A100) or local CUDA GPU with [Ollama](https://ollama.com/) |
+
+---
+
+## ⚡ RunPod & Ollama GPU Setup
+
+TraceMind uses **Ollama** on a cloud GPU instance (e.g. RunPod) to execute high-performance open-source models for reasoning, vision analysis, and dense vector embeddings.
+
+### 1. Launch a RunPod Instance
+- **Recommended GPU**: NVIDIA L40 (48GB VRAM), RTX 4090 (24GB VRAM), or A100 (80GB).
+- **Template**: Official `RunPod PyTorch` or `Ubuntu 22.04 / CUDA 12.x`.
+- **Exposed HTTP Ports**: Ensure port **`11434`** is exposed under **HTTP Service Proxy**.
+
+---
+
+### 2. Commands to Execute in RunPod Terminal
+
+Open the RunPod **Web Terminal** or connect via **SSH**, then run the following commands in sequence:
+
+#### Step 1: Install Ollama
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+#### Step 2: Start Ollama Daemon (Bound to all network interfaces with keep-alive)
+```bash
+# Set OLLAMA_HOST to 0.0.0.0 so the RunPod proxy can access port 11434
+export OLLAMA_HOST=0.0.0.0:11434
+export OLLAMA_KEEP_ALIVE=-1
+
+# Launch in background with nohup (or run inside tmux)
+nohup ollama serve > ollama.log 2>&1 &
+```
+
+*(Optional: To monitor Ollama logs live in RunPod, run: `tail -f ollama.log`)*
+
+#### Step 3: Pull All Required AI Models
+Execute each of the following model download commands:
+
+```bash
+# 1. Primary Text Reasoning & Epistemic Calibration Model (14B)
+ollama pull qwen3:14b
+
+# 2. Vision Intelligence & OCR Model (8B)
+ollama pull qwen3-vl:8b
+
+# 3. Dense Vector Embeddings Model (768-dim)
+ollama pull nomic-embed-text
+```
+
+---
+
+### 3. Verify Ollama & Models on RunPod
+
+Test that Ollama is actively running and all three models are ready:
+
+```bash
+# Check loaded models list
+curl http://localhost:11434/api/tags
+```
+
+You should receive a JSON response listing `qwen3:14b`, `qwen3-vl:8b`, and `nomic-embed-text`.
+
+---
+
+### 4. Connect TraceMind to your RunPod Instance
+
+1. In your RunPod dashboard, click **Connect** on your active Pod.
+2. Locate the **HTTP Service Proxy (Port 11434)** URL. It will look like:
+   ```text
+   https://<YOUR-RUNPOD-ID>-11434.proxy.runpod.net
+   ```
+3. Copy this URL and set it in your local `src/backend/.env` file:
+   ```env
+   OLLAMA_BASE_URL=https://<YOUR-RUNPOD-ID>-11434.proxy.runpod.net
+   OLLAMA_TEXT_MODEL=qwen3:14b
+   OLLAMA_VISION_MODEL=qwen3-vl:8b
+   OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+   ```
+4. Verify external connectivity from your local machine terminal:
+   ```bash
+   curl https://<YOUR-RUNPOD-ID>-11434.proxy.runpod.net/api/tags
+   ```
+
+---
+
+## 💻 Installation & Local Setup
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Risi2004/TraceMind.git
+cd TraceMind
+```
+
+### 2. Install All Dependencies
+Install backend and frontend dependencies in one command from the project root:
 ```bash
 npm run install:all
 ```
+*(Or install manually by running `npm install` inside both `src/backend` and `src/frontend`)*
 
-*(Alternatively, run `npm install` inside each of `src/backend` and `src/frontend`)*
+---
 
-### 3. Environment Configuration
-Copy the `.env.example` templates to `.env`:
+## ⚙️ Environment Configuration
+
+### Backend Configuration (`src/backend/.env`)
+
+Copy the example template:
 ```bash
-# Backend
 cp src/backend/.env.example src/backend/.env
+```
 
-# Frontend
+Edit `src/backend/.env` with your actual credentials:
+
+```env
+# -------------------------------------------------------------
+# Server & Environment Settings
+# -------------------------------------------------------------
+PORT=5000
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+
+# -------------------------------------------------------------
+# MongoDB Connection
+# -------------------------------------------------------------
+MONGODB_URI=mongodb://127.0.0.1:27017/tracemind
+# (Or MongoDB Atlas: mongodb+srv://<user>:<password>@cluster.mongodb.net/tracemind)
+
+# -------------------------------------------------------------
+# Authentication & Security
+# -------------------------------------------------------------
+JWT_SECRET=your_super_secret_jwt_encryption_key_change_in_production
+JWT_EXPIRES_IN=7d
+
+# -------------------------------------------------------------
+# SMTP Email Service (Mailtrap or Gmail)
+# -------------------------------------------------------------
+SMTP_HOST=smtp.mailtrap.io
+SMTP_PORT=2525
+SMTP_SECURE=false
+SMTP_USER=your_mailtrap_username
+SMTP_PASS=your_mailtrap_password
+EMAIL_FROM_NAME="TraceMind AI"
+EMAIL_FROM_ADDRESS="no-reply@tracemind.ai"
+
+# -------------------------------------------------------------
+# Cloudflare R2 Document Storage
+# -------------------------------------------------------------
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+R2_BUCKET_NAME=tracemind-documents
+R2_ENDPOINT=https://<your_cloudflare_account_id>.r2.cloudflarestorage.com
+MAX_UPLOAD_SIZE_MB=300
+
+# -------------------------------------------------------------
+# Ollama / RunPod AI Engine Configuration
+# -------------------------------------------------------------
+OLLAMA_BASE_URL=https://<your-runpod-id>-11434.proxy.runpod.net
+OLLAMA_TEXT_MODEL=qwen3:14b
+OLLAMA_VISION_MODEL=qwen3-vl:8b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
+# -------------------------------------------------------------
+# Qdrant Cloud Vector Database
+# -------------------------------------------------------------
+QDRANT_URL=https://<your-cluster-id>.<region>.cloud.qdrant.io:6333
+QDRANT_API_KEY=your_qdrant_api_key_here
+QDRANT_COLLECTION=tracemind_chunks
+
+# -------------------------------------------------------------
+# Multi-Agent RAG Parameters
+# -------------------------------------------------------------
+RAG_TOP_K=8
+MAX_SEARCH_ROUNDS=4
+ENABLE_ADK_DEBUG_LOGS=true
+```
+
+### Frontend Configuration (`src/frontend/.env`)
+
+Copy the example template:
+```bash
 cp src/frontend/.env.example src/frontend/.env
 ```
 
-### 4. Running the Development Servers
-
-You can start the backend and frontend independently:
-
-```bash
-# Run Backend (Runs on http://localhost:5000 with --watch auto-reload)
-npm run dev:backend
-
-# Run Frontend (Runs on http://localhost:5173 with Vite HMR)
-npm run dev:frontend
+Edit `src/frontend/.env`:
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
+VITE_APP_TITLE=TraceMind
 ```
 
 ---
 
-## 🔌 API Endpoints (Backend)
+## 🚀 Running the Application
 
-| Method | Endpoint | Description |
+You can start both backend and frontend development servers independently from the root workspace:
+
+```bash
+# Terminal 1: Launch Backend API Server (http://localhost:5000)
+npm run dev:backend
+
+# Terminal 2: Launch Frontend SPA (http://localhost:5173)
+npm run dev:frontend
+```
+
+### Available NPM Scripts Reference
+
+| Command | Target | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api` | Service info and API metadata |
-| `GET` | `/api/health` | Health check & uptime monitor |
+| `npm run install:all` | Root | Installs dependencies for both backend and frontend |
+| `npm run dev:backend` | Backend | Starts Express server with `nodemon` live reload on port `5000` |
+| `npm run dev:frontend` | Frontend | Starts Vite dev server with Hot Module Replacement on port `5173` |
+| `npm run start:backend` | Backend | Runs the production backend node process |
+| `npm run build:frontend` | Frontend | Compiles production-ready frontend bundle into `src/frontend/dist` |
+| `npm run lint:frontend` | Frontend | Executes ESLint across all React frontend components |
 
 ---
 
-## 📜 Scripts Reference
+## 📡 API Reference
 
-| Command | Description |
-| :--- | :--- |
-| `npm run dev:backend` | Starts backend development server with auto-reload (`node --watch`) |
-| `npm run dev:frontend` | Starts Vite frontend development server |
-| `npm run start:backend` | Runs the production backend entrypoint |
-| `npm run build:frontend` | Compiles the production frontend bundle into `src/frontend/dist` |
-| `npm run lint:frontend` | Lints the frontend source code |
-| `npm run install:all` | Installs dependencies across all workspaces |
+### 1. System & Health Check
+- `GET /api` — Service information, active modules, and API metadata.
+- `GET /api/health` — Real-time health status of MongoDB, Qdrant, R2, and Ollama connections.
+
+### 2. Authentication (`/api/auth`)
+- `POST /api/auth/register` — Register a new user account and dispatch verification email.
+- `POST /api/auth/login` — Authenticate credentials and return JWT session token.
+- `POST /api/auth/verify-email` — Verify email via verification token.
+- `POST /api/auth/forgot-password` — Request password reset email.
+- `POST /api/auth/reset-password` — Set new password using reset token.
+- `GET /api/auth/me` — Retrieve current authenticated user profile (`Bearer JWT`).
+
+### 3. Document Management (`/api/documents`)
+- `POST /api/documents/upload` — Upload files (`multipart/form-data`) to Cloudflare R2, trigger background chunking, visual parsing, and Qdrant vector indexing.
+- `GET /api/documents` — List all user uploaded documents with indexing status and metadata.
+- `GET /api/documents/:id` — Get document details and direct pre-signed access URL.
+- `DELETE /api/documents/:id` — Delete document from R2 storage and purge vector embeddings from Qdrant.
+
+### 4. Multi-Agent Reasoning & RAG (`/api/rag`)
+- `POST /api/rag/chat` — Execute full multi-agent investigation workflow (`{ query, conversationHistory }`). Returns calibrated response, source references, and agent execution telemetry.
+- `GET /api/rag/stream` — Real-time Server-Sent Events (SSE) telemetry stream for the live 3D Agent Flow Visualizer.
+
+---
+
+## 📂 Project Directory Structure
+
+```text
+TraceMind/
+├── package.json                         # Root monorepo scripts and workspaces
+├── README.md                            # Comprehensive system documentation
+├── .gitignore                           # Git ignore rules for node_modules, .env, dist
+├── ai_usage/                            # Challenge audit trail & interaction records
+├── docs/                                # Technical documentation and specifications
+└── src/
+    ├── backend/                         # Express.js API Service (ES Modules)
+    │   ├── index.js                     # Main server entrypoint & route binding
+    │   ├── package.json                 # Backend dependencies & scripts
+    │   ├── nodemon.json                 # Development live-reload configuration
+    │   ├── .env.example                 # Backend environment variable template
+    │   ├── agents/                      # 8-Agent Google ADK Orchestration Engine
+    │   │   ├── adkOrchestrator.js       # Main multi-agent loop orchestrator
+    │   │   ├── planner.agent.js         # Query analysis & sub-task planning
+    │   │   ├── retrieval.agent.js       # Dense vector retrieval coordinator
+    │   │   ├── vision.agent.js          # 5-Region visual parsing & OCR analyst
+    │   │   ├── evidence.agent.js        # 4-Tier epistemic calibration classifier
+    │   │   ├── conflict.agent.js        # Cross-document discrepancy resolver
+    │   │   ├── sufficiency.agent.js     # Information sufficiency evaluator
+    │   │   ├── followup.agent.js        # Knowledge gap query generator
+    │   │   └── answer.agent.js          # Grounded response synthesis
+    │   ├── config/                      # Database & cloud connection singletons
+    │   │   ├── db.js                    # Mongoose MongoDB connection
+    │   │   ├── qdrant.js                # Qdrant REST client configuration
+    │   │   └── r2.js                    # Cloudflare R2 S3 SDK client
+    │   ├── controllers/                 # Route controllers (Auth, Docs, RAG)
+    │   ├── middleware/                  # JWT auth & Multer upload middleware
+    │   ├── models/                      # Mongoose schemas (User, Document, Log)
+    │   ├── routes/                      # Express route definitions
+    │   └── services/                    # Core business logic services
+    │       ├── chunking.service.js      # Text & table token chunking
+    │       ├── extractor.service.js     # PDF, DOCX, ZIP, Image text extractors
+    │       ├── ingestion.service.js     # End-to-end document indexing pipeline
+    │       ├── ollama.service.js        # Ollama API client & model manager
+    │       ├── qwen.service.js          # Calibrated Qwen text reasoning service
+    │       ├── qdrant.service.js        # Vector upsert & similarity search
+    │       ├── r2.service.js            # Cloudflare R2 upload & pre-signed URLs
+    │       └── vision.service.js        # Image encoding & visual analysis
+    │
+    └── frontend/                        # React SPA (Vite + React 19)
+        ├── index.html                   # HTML SPA template
+        ├── vite.config.js               # Vite bundler & React Compiler config
+        ├── package.json                 # Frontend dependencies & scripts
+        ├── .env.example                 # Frontend environment template
+        └── src/
+            ├── App.jsx                  # Main application router and shell
+            ├── main.jsx                 # React root DOM mount point
+            ├── index.css                # Global design system & glassmorphism theme
+            ├── context/                 # AuthContext & InvestigationContext
+            ├── pages/                   # ChatDashboard, Auth, Landing pages
+            └── components/              # Modular UI Component Library
+                ├── chat/                # ChatInput, MessageList, AgentFlowModal
+                ├── documents/           # DocumentsView, UploadDropzone, FilePreview
+                ├── common/              # Buttons, Modals, Spinners, Toast alerts
+                └── Hero/                # Landing page hero & features showcase
+```
+
+---
+
+## 🧪 Verification & Testing
+
+TraceMind includes dedicated test suites for validating backend services, vector storage, and visual reasoning:
+
+### 1. Test Multi-Agent Evaluation Suite
+Run the comprehensive ADK multi-agent evaluation benchmark:
+```bash
+cd src/backend
+node test_adk_evaluation_suite.js
+```
+
+### 2. Verify Frontend Production Build
+Validate that the React application compiles cleanly without errors:
+```bash
+npm run build:frontend
+```
+
+---
+
+## ❓ Troubleshooting & FAQ
+
+<details>
+<summary><b>1. Ollama on RunPod returns connection refused or 404</b></summary>
+<p>Ensure that the Ollama process on your RunPod is running with <code>OLLAMA_HOST=0.0.0.0:11434</code>. If bound only to <code>localhost</code>, external proxy requests will be rejected. Verify that port <code>11434</code> is exposed in your RunPod pod settings.</p>
+</details>
+
+<details>
+<summary><b>2. Qdrant returns Collection Not Found (404)</b></summary>
+<p>TraceMind automatically checks and creates the collection defined in <code>QDRANT_COLLECTION</code> (default: <code>tracemind_chunks</code>) with 768-dimensional cosine distance vectors upon server startup. Ensure your <code>QDRANT_URL</code> and <code>QDRANT_API_KEY</code> are valid.</p>
+</details>
+
+<details>
+<summary><b>3. Clipboard image paste not working in chat</b></summary>
+<p>Ensure your browser has clipboard permissions enabled. Taking a screenshot with <code>Win + Shift + S</code> (Windows) or <code>Cmd + Shift + 4</code> (Mac) saves raw PNG bytes to your clipboard; pressing <code>Ctrl + V</code> inside the chat input will automatically stage the screenshot for upload.</p>
+</details>
+
+<details>
+<summary><b>4. Email verification not sending</b></summary>
+<p>For development, use <a href="https://mailtrap.io/">Mailtrap</a> and configure your credentials under <code>SMTP_USER</code> and <code>SMTP_PASS</code> in <code>src/backend/.env</code>. All test emails will be captured safely in your Mailtrap inbox.</p>
+</details>
+
+---
+
+## 📄 License
+
+This project is licensed under the **ISC License**. Developed for the **AI Innovation Challenge**.
+
+---
+
+<p align="center">
+  <b>Built with ❤️ by the TraceMind Team</b><br>
+  <i>Empowering Grounded, Calibrated Multi-Agent Document Intelligence</i>
+</p>

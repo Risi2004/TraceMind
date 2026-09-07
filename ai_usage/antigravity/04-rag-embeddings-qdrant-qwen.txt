@@ -356,6 +356,118 @@ Refactor the existing TraceMind image-processing implementation to use a dedicat
   * Verified text RAG, standalone image ingestion, scanned PDF fallback, and visual chunk inspection via `test_vision_agent_refactor.js` (ALL TESTS PASSED).
   * Frontend built cleanly in 2.10s with 0 errors.
 
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 19: RunPod Ollama Connectivity & Model Verification
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Check whether my Ollama instance on RunPod is reachable and all the models are accessible.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Verified remote Ollama HTTP proxy at `https://<RUNPOD_ID>-11434.proxy.runpod.net`:
+  * Confirmed port 11434 proxy availability and health status.
+  * Verified model availability: `qwen3:14b` (Text & Epistemic Reasoning), `qwen3-vl:8b` (Vision & OCR), and `nomic-embed-text` (Dense Embeddings).
+  * Tested live embedding generation for 768-dimensional vectors and evaluated inference latency with keep-alive caching.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 20: Qdrant Image Vector Embeddings Inspection
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+I uploaded an image; now show me all the vector embeddings and payloads in Qdrant related to that image.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Created diagnostic inspection script querying Qdrant Cloud collection `tracemind_chunks`:
+  * Retrieved points matching `isImage: true` and `contentType: 'image'`.
+  * Verified stored visual payload attributes: `documentId`, `fileName`, `chunkIndex`, `pageNumber`, `sourceType`, `visionModel`, and extracted markdown text.
+  * Confirmed that high-dimensional vector embeddings are accurately generated and stored exclusively in Qdrant Cloud.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 21: 5-Region Vision Agent Enhancement for Complete Evidence Extraction
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Fix the existing TraceMind Vision Agent because it is producing incomplete image evidence.
+For complex composite test images containing maps, route labels, harbor photographs, and shipping manifests, the Vision Agent failed to detect critical details such as "Primary route (Northreach -> Blackridge) ~ 240 km".
+Update vision.agent.js so qwen3-vl:8b analyzes the ENTIRE image region-by-region:
+1. Map area (routes, distances, arrows, waypoints)
+2. Photo area (harbor, facilities, crate markings)
+3. Manifest/table area (item IDs, quantities, origin, destination)
+4. Handwritten annotations (stamps, notes, corrections)
+5. Legends and footnotes (symbology, measurement keys)
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Refactored `src/backend/agents/vision.agent.js`:
+  * Built structured 5-region inspection system prompt enforcing exhaustive spatial extraction across maps, photos, manifests, handwritten notes, and legends.
+  * Added mandatory OCR extraction rules for route distances, coordinates, tabular rows, and spatial relationships between visual regions.
+  * Enhanced `formatVisualEvidenceForRAG` to output cleanly structured, region-tagged markdown suitable for multi-hop semantic indexing.
+- Verified visual extraction on complex composite documents via `test_call_vision_direct.js` and `reindex_and_test_image.js`, successfully recovering route distances and multi-region details with 100% fidelity.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 22: 4-Tier Epistemic Evidence Calibration & Anti-Hallucination Restraint
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Refine the reasoning and answer-generation logic to improve evidence calibration and prevent unsupported conclusions:
+1. Separate claims internally into 4 tiers:
+   - VERIFIED FACT (directly visible or explicitly stated in source)
+   - STRONG INFERENCE (corroborated independently across multiple sources)
+   - POSSIBLE INFERENCE (plausible conclusion, but not directly proven)
+   - UNKNOWN / NOT ESTABLISHED (insufficient evidence to determine)
+2. Never convert an inference into a verified fact.
+3. If two pieces of evidence only share location, time, quantity, or similar names, describe the relationship as "plausibly associated", "may be connected", or "evidence suggests" unless direct proof exists.
+4. Never introduce unsupported charged terms (e.g. "illegal", "illicit", "criminal", "classified", "sabotage", "guilty", "responsible") unless explicitly present in source evidence.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `src/backend/agents/evidence.agent.js`:
+  * Enforced 4-tier epistemic classification on all extracted claims prior to synthesis.
+- Updated `src/backend/agents/sufficiency.agent.js`:
+  * Tuned sufficiency evaluation to demand explicit factual backing before declaring high confidence.
+- Updated `src/backend/services/qwen.service.js`:
+  * Injected epistemic restraint rules into answer synthesis prompts: mandated cautious phrasing for correlated records and prohibited ungrounded speculative vocabulary.
+- Validated via `test_calibrated_pipeline.js` and `test_refined_calibration.js`, verifying that inferences remain strictly labeled as inferences and unverified assertions default to "UNKNOWN / NOT ESTABLISHED".
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 23: Direct Clipboard Screenshot Pasting (`Ctrl + V`)
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+When taking a screenshot on PC (saves to clipboard via Win + Shift + S), pasting with Ctrl + V into the chat window does not work. Fix clipboard image pasting.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Updated `src/frontend/src/components/chat/ChatInput.jsx`:
+  * Added `handlePaste` event listener to chat textarea.
+  * Inspected clipboard items for `item.type.startsWith('image/')` and converted clipboard binary blobs to `File` objects with timestamped names (`screenshot_YYYY-MM-DD_HH-mm-ss.png`).
+  * Seamlessly appended pasted screenshots to `pendingFiles` state with instant visual preview and one-click removal badge.
+  * Preserved normal text clipboard pasting while intercepting image pastes.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 24: User Interface Generalization & Technology Decoupling
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+In generating answers and in the UI, all things consist of the specific technologies being used. Replace internal model/cloud names with clean, professional, general terminology.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Sanitized user-facing UI labels, progress banners, modals, and tooltips across the frontend:
+  * `ChatDashboard.jsx`: Replaced specific model status badges with *"TraceMind AI Engine"* and *"Multi-Agent Deep Investigation"*.
+  * `ChatInput.jsx`: Replaced technical prompts with clean, intuitive placeholders and tooltips.
+  * `DocumentsView.jsx`: Replaced raw storage/vector provider names with *"Secure Document Storage"* and *"Semantic Knowledge Base"*.
+  * `SourcePreviewModal.jsx` & `AgentFlowModal.jsx`: Replaced model identifiers with *"Visual Content Analysis"* and clean agent roles.
+- Maintained developer telemetry in backend console logs while presenting an enterprise-grade, polished UI to end users.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 25: Comprehensive System README & Setup Documentation
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Create a proper Readme file with all the setup instructions and needed instructions.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Authored a comprehensive, production-grade `README.md` in the project root:
+  * System Architecture & Multi-Agent Orchestration Flow with ASCII & Mermaid sequence diagrams.
+  * 5-Region Visual Intelligence & 4-Tier Epistemic Calibration documentation.
+  * Prerequisites & Infrastructure Matrix (Node.js 18+, MongoDB, Qdrant Cloud, Cloudflare R2, RunPod GPU).
+  * Step-by-step RunPod & Ollama GPU Setup commands (`OLLAMA_HOST`, `nohup ollama serve`, `ollama pull` for `qwen3:14b`, `qwen3-vl:8b`, `nomic-embed-text`).
+  * Detailed `.env` configuration guides for backend and frontend.
+  * Full NPM scripts reference (`install:all`, `dev:backend`, `dev:frontend`, `build:frontend`).
+  * Complete REST and SSE API endpoint catalog.
+  * Verification test suite instructions and troubleshooting FAQ.
+
 ===============================================================================
 END OF SESSION 04 LOG
 ===============================================================================
+

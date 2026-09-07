@@ -122,7 +122,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           const allReady =
             relevantDocs.length > 0 && relevantDocs.every((d) => d.status === 'ready');
 
-          // CASE 1: All documents successfully indexed in Qdrant Cloud!
+          // CASE 1: All documents successfully indexed in knowledge base!
           if (allReady) {
             clearInterval(intervalId);
             setVectorizationState((prev) => ({
@@ -130,7 +130,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'ready',
-              message: 'All documents vectorized & saved to Qdrant Cloud! Submit unlocked.',
+              message: 'All documents processed & indexed! Ready for questions.',
             }));
 
             setTimeout(() => {
@@ -148,7 +148,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'error',
-              message: failedDoc?.errorMessage || 'Vectorization processing failed.',
+              message: failedDoc?.errorMessage || 'Document processing failed.',
             }));
 
             setTimeout(() => {
@@ -163,9 +163,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             let stageMessage = 'Extracting text and structural pages...';
 
             if (simulatedProgress > 50 && simulatedProgress <= 75) {
-              stageMessage = 'Generating Nomic Embeddings on RunPod GPU...';
+              stageMessage = 'Generating semantic embeddings...';
             } else if (simulatedProgress > 75) {
-              stageMessage = 'Indexing vector points and metadata in Qdrant Cloud...';
+              stageMessage = 'Indexing document content and metadata...';
             }
 
             setVectorizationState((prev) => ({
@@ -547,7 +547,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       stage: 'uploading',
       filename: displayFilename,
       count: files.length,
-      message: 'Uploading to Cloudflare R2 storage (0%)...',
+      message: 'Uploading to secure document storage (0%)...',
     });
 
     try {
@@ -558,8 +558,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           progress: uploadScaledProgress,
           stage: 'uploading',
           message: percent === 100
-            ? 'Stored in Cloudflare R2! Extracting text and pages...'
-            : `Uploading to Cloudflare R2 (${percent}%)...`,
+            ? 'Stored securely! Extracting text and pages...'
+            : `Uploading to document storage (${percent}%)...`,
         }));
       });
 
@@ -674,7 +674,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     });
 
     const stepTimer1 = setTimeout(() => {
-      setInvestigationStepText('Executing dense vector search in Qdrant with Retrieval Agent...');
+      setInvestigationStepText('Executing semantic search across knowledge base...');
       setLiveAgentFlow(prev => ({
         ...prev,
         isLive: true,
@@ -687,7 +687,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             event: 'SEARCH_IN_PROGRESS',
             status: 'running',
             round: 1,
-            message: 'Executing dense vector search against Qdrant Cloud collection',
+            message: 'Searching document knowledge base for relevant passages',
             timestamp: new Date().toISOString(),
             metadata: { sourcesFound: 6 }
           }
@@ -709,7 +709,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             event: 'SEARCH_COMPLETED',
             status: 'completed',
             round: 1,
-            message: 'Retrieved 12 relevant document passages from Qdrant Cloud',
+            message: 'Retrieved 12 relevant document passages from knowledge base',
             timestamp: new Date().toISOString(),
             metadata: { sourcesFound: 12 }
           },
@@ -736,7 +736,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }, 1900);
 
     const stepTimer3 = setTimeout(() => {
-      setInvestigationStepText('Synthesizing Grounded Answer with Qwen LLM on RunPod...');
+      setInvestigationStepText('Synthesizing verified, citation-grounded response...');
       setLiveAgentFlow(prev => ({
         ...prev,
         isLive: true,
@@ -748,7 +748,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             event: 'SEARCH_COMPLETED',
             status: 'completed',
             round: 1,
-            message: 'Retrieved 12 relevant document passages from Qdrant Cloud',
+            message: 'Retrieved 12 relevant document passages from knowledge base',
             timestamp: new Date().toISOString(),
             metadata: { sourcesFound: 12 }
           },
@@ -775,7 +775,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             event: 'ANSWER_SYNTHESIS',
             status: 'running',
             round: 1,
-            message: 'Synthesizing verified, citation-grounded response with Qwen LLM on RunPod',
+            message: 'Synthesizing verified, citation-grounded response',
             timestamp: new Date().toISOString()
           }
         ]
@@ -839,13 +839,13 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           fullText: src.fullText,
         })),
         reasoningSummary: {
-          strategy: `Google ADK Multi-Hop (${result.roundsCount || 1} Round${(result.roundsCount || 1) > 1 ? 's' : ''}) + Grounded Qwen`,
+          strategy: `Multi-Agent Deep Investigation (${result.roundsCount || 1} Round${(result.roundsCount || 1) > 1 ? 's' : ''})`,
           evidenceFound: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
           conflictDetected: Boolean(result.conflictDetected),
           conflictAssessment: result.conflictReport?.assessment,
           confidence: result.confidence || 94,
           roundsCount: result.roundsCount || 1,
-          model: result.model || 'qwen3:14b',
+          model: 'TraceMind AI Engine',
         }
       };
 
@@ -897,10 +897,10 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         id: `ai-err-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        content: `⚠️ **Unable to generate answer:** ${err.message || 'An error occurred while communicating with the RAG pipeline or RunPod Ollama server.'}`,
+        content: `⚠️ **Unable to generate answer:** ${err.message || 'An error occurred while connecting to the reasoning service. Please try again.'}`,
         sources: [],
         reasoningSummary: {
-          strategy: 'RAG Error Handler',
+          strategy: 'Error Handler',
           evidenceFound: 0,
           conflictDetected: true,
           confidence: 0,
@@ -927,8 +927,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         <div className="chat-drop-overlay">
           <div className="drop-overlay-card">
             <UploadCloudIcon size={48} className="drop-icon-animated" />
-            <h3 className="drop-title">Drop files to upload to Cloudflare R2</h3>
-            <p className="drop-subtitle">PDF, DOCX, TXT, Markdown, or ZIP archives (up to 300MB)</p>
+            <h3 className="drop-title">Drop files to upload documents</h3>
+            <p className="drop-subtitle">PDF, DOCX, TXT, Markdown, PNG, JPG, or ZIP archives (up to 300MB)</p>
           </div>
         </div>
       )}
@@ -984,7 +984,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   <span className="chat-active-title">Document Repository</span>
                   <span className="chat-subtitle-badge">
                     <FileTextIcon size={12} />
-                    <span>{documents.length} Files in Cloudflare R2</span>
+                    <span>{documents.length} Uploaded Files</span>
                   </span>
                 </>
               )}
@@ -996,7 +996,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   </span>
                   <span className="chat-subtitle-badge">
                     <SparklesIcon size={12} />
-                    <span>Cloudflare R2 Storage</span>
+                    <span>Document Vault</span>
                   </span>
                 </>
               )}
@@ -1064,7 +1064,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                     }
                     setAgentFlowModalOpen(true);
                   }}
-                  title="View 3D Multi-Agent Execution Flow"
+                  title="View Multi-Agent Execution Flow"
                 >
                   <NetworkIcon size={16} />
                   <span className="hidden-xs">{isLoading ? 'Live Agent Flow' : 'Agent Flow'}</span>
@@ -1114,10 +1114,10 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   <div className="vector-title-row">
                     <span className="vector-title">
                       {vectorizationState.stage === 'ready'
-                        ? 'Vectorization Complete'
+                        ? 'Processing Complete'
                         : vectorizationState.stage === 'error'
-                        ? 'Vectorization Failed'
-                        : `Vectorizing: ${vectorizationState.filename || 'Documents'}`}
+                        ? 'Processing Failed'
+                        : `Processing: ${vectorizationState.filename || 'Documents'}`}
                     </span>
                     <span className="vector-percent-tag">
                       {Math.round(vectorizationState.progress)}%
@@ -1130,7 +1130,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               <div className="vector-stage-right">
                 <span className="vector-engine-tag">
                   <SparklesIcon size={12} />
-                  <span>Nomic • Qdrant Cloud</span>
+                  <span>Semantic Knowledge Base</span>
                 </span>
               </div>
             </div>
