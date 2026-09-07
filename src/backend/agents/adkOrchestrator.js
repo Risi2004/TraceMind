@@ -56,13 +56,22 @@ export const executeAdkInvestigation = async ({
   let conflictReport = { hasConflict: false, conflictType: 'none', conflictingSources: [], assessment: '', resolution: 'no_conflict' };
   let currentSearchQuery = query;
 
+  // Diagnostic Timing Instrumentation
+  const perfTimeline = [];
+  let llmCallCount = 0;
+  let qdrantSearchCount = 0;
+  let visionCallCount = 0;
+
   // -------------------------------------------------------------
   // STEP 1: Planner Agent (Analyze & Deconstruct Goal)
   // -------------------------------------------------------------
+  const tPlanner0 = Date.now();
+  llmCallCount++;
   const plan = await runPlannerAgent({
     question: query,
     scopeName: scopeName || (documentId && documentId !== 'all' ? 'Target Document Asset' : 'All Documents'),
   });
+  perfTimeline.push({ label: 'Planner Agent', durationMs: Date.now() - tPlanner0 });
 
   currentSearchQuery = plan.primaryQuery || query;
 
@@ -102,6 +111,7 @@ export const executeAdkInvestigation = async ({
     previousQueries.push(currentSearchQuery);
 
     // 2A. Retrieval Agent (Execute dense search in Qdrant)
+    qdrantSearchCount++;
     const retrievalResult = await runRetrievalAgent({
       searchQuery: currentSearchQuery,
       userId,
@@ -109,6 +119,8 @@ export const executeAdkInvestigation = async ({
       seenChunkIds,
       topK: effectiveTopK,
     });
+    perfTimeline.push({ label: `Query Embedding #${currentRound}`, durationMs: retrievalResult.embedDurationMs || 0 });
+    perfTimeline.push({ label: `Qdrant Search #${currentRound}`, durationMs: retrievalResult.qdrantDurationMs || 0 });
 
     if (retrievalResult.newChunks && retrievalResult.newChunks.length > 0) {
       accumulatedChunks.push(...retrievalResult.newChunks);
@@ -153,6 +165,8 @@ export const executeAdkInvestigation = async ({
     );
 
     if (imageChunks.length > 0) {
+      const tVision0 = Date.now();
+      visionCallCount++;
       const visionResult = await runVisionAgent({
         visualChunks: imageChunks,
         fileName: imageChunks[0]?.fileName || 'Visual Evidence',
@@ -189,22 +203,38 @@ export const executeAdkInvestigation = async ({
       if (visionResult.structuredEvidence?.importantFacts) {
         accumulatedFacts.push(...visionResult.structuredEvidence.importantFacts);
       }
+      perfTimeline.push({ label: `Vision Agent #${currentRound}`, durationMs: Date.now() - tVision0 });
     }
 
     // 2C & 2D. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
-    const [evidenceResult, conflictReportResult] = await Promise.all([
-      runEvidenceAgent({
-        question: query,
-        newChunks: retrievalResult.newChunks,
-        currentRound,
-      }),
-      runConflictAgent({
-        question: query,
-        accumulatedChunks,
-        accumulatedFacts,
-        currentRound,
-      }),
-    ]);
+    let evidenceDuration = 0;
+    let conflictDuration = 0;
+    llmCallCount += 2;
+
+    const tEvid0 = Date.now();
+    const evidPromise = runEvidenceAgent({
+      question: query,
+      newChunks: retrievalResult.newChunks,
+      currentRound,
+    }).then(res => {
+      evidenceDuration = Date.now() - tEvid0;
+      return res;
+    });
+
+    const tConf0 = Date.now();
+    const confPromise = runConflictAgent({
+      question: query,
+      accumulatedChunks,
+      accumulatedFacts,
+      currentRound,
+    }).then(res => {
+      conflictDuration = Date.now() - tConf0;
+      return res;
+    });
+
+    const [evidenceResult, conflictReportResult] = await Promise.all([evidPromise, confPromise]);
+    perfTimeline.push({ label: `Evidence Agent #${currentRound}`, durationMs: evidenceDuration });
+    perfTimeline.push({ label: `Conflict Agent #${currentRound}`, durationMs: conflictDuration });
 
     conflictReport = conflictReportResult;
 
@@ -284,6 +314,8 @@ export const executeAdkInvestigation = async ({
     }
 
     // 2D. Sufficiency Agent (Evaluate completeness & conflict resolution)
+    const tSuff0 = Date.now();
+    llmCallCount++;
     sufficiencyStatus = await runSufficiencyAgent({
       question: query,
       accumulatedFacts,
@@ -293,6 +325,7 @@ export const executeAdkInvestigation = async ({
       currentRound,
     });
 
+    perfTimeline.push({ label: `Sufficiency Agent #${currentRound}`, durationMs: Date.now() - tSuff0 });
     adkLogger.logSufficiencyEvaluation({
       round: currentRound,
       isSufficient: sufficiencyStatus.isSufficient,
@@ -337,6 +370,8 @@ export const executeAdkInvestigation = async ({
       });
 
       // 2E. Follow-up Search Agent (Formulate next targeted query)
+      const tFollow0 = Date.now();
+      llmCallCount++;
       const followUpResult = await runFollowUpSearchAgent({
         question: query,
         missingInformation: sufficiencyStatus.missingInformation,
@@ -344,6 +379,7 @@ export const executeAdkInvestigation = async ({
         currentRound,
       });
 
+      perfTimeline.push({ label: `Follow-up Agent #${currentRound}`, durationMs: Date.now() - tFollow0 });
       currentSearchQuery = followUpResult.followUpQuery;
 
       adkLogger.logFollowUpQuery({
@@ -385,6 +421,8 @@ export const executeAdkInvestigation = async ({
   // -------------------------------------------------------------
   // STEP 3: Answer Agent (Grounded Synthesis + Conflict Citations)
   // -------------------------------------------------------------
+  const tAnswer0 = Date.now();
+  llmCallCount++;
   const answerResult = await runAnswerAgent({
     question: query,
     accumulatedChunks,
@@ -394,7 +432,24 @@ export const executeAdkInvestigation = async ({
     chatHistory,
   });
 
+  const tAnswerDuration = Date.now() - tAnswer0;
+  perfTimeline.push({ label: 'Answer Agent', durationMs: tAnswerDuration });
   const durationMs = Date.now() - startTime;
+
+  // Diagnostic Performance Output Block
+  console.log('\n========== TRACEMIND PERFORMANCE ==========');
+  console.log('\nQuestion:');
+  console.log(`"${query}"\n`);
+  for (const item of perfTimeline) {
+    const pad = item.label.padEnd(25, ' ');
+    console.log(`${pad} ${(item.durationMs / 1000).toFixed(1)}s`);
+  }
+  console.log(`\nLLM calls: ${llmCallCount}`);
+  console.log(`Qdrant searches: ${qdrantSearchCount}`);
+  console.log(`Retrieval rounds: ${currentRound}`);
+  console.log(`Vision calls: ${visionCallCount}`);
+  console.log(`\nTotal execution time: ${(durationMs / 1000).toFixed(1)} seconds`);
+  console.log('===========================================\n');
 
   investigationSteps.push({
     step: investigationSteps.length + 1,

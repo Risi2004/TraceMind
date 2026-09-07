@@ -59,7 +59,9 @@ export const uploadDocuments = async (req, res) => {
       if (ZIP_EXTENSIONS.includes(fileExt)) {
         try {
           console.log(`[ZIP Ingestion] Processing archive "${originalName}" (${(file.buffer.length / 1024).toFixed(1)} KB)...`);
+          const tZipStart = Date.now();
           const extractionResult = await validateAndExtractZip(file.buffer, originalName);
+          const zipExtractMs = Date.now() - tZipStart;
 
           const archiveManifest = {
             archive: originalName,
@@ -98,6 +100,7 @@ export const uploadDocuments = async (req, res) => {
               const r2Key = `users/${userId}/documents/${docId}/${cleanFilename}`;
 
               // 1. Upload uncompressed buffer to Cloudflare R2
+              const tR2Start = Date.now();
               await uploadBufferToR2({
                 key: r2Key,
                 buffer: extractedFile.buffer,
@@ -111,7 +114,9 @@ export const uploadDocuments = async (req, res) => {
                 },
               });
 
+              const r2DurationMs = Date.now() - tR2Start;
               // 2. Save Document Record in MongoDB (starts in 'uploaded' state)
+              const tMongoStart = Date.now();
               const title = extractedFile.originalFileName
                 .replace(/\.[^/.]+$/, '')
                 .replace(/[-_]/g, ' ');
@@ -139,6 +144,8 @@ export const uploadDocuments = async (req, res) => {
                 },
               });
 
+              const mongoDurationMs = Date.now() - tMongoStart;
+              extractedFile._timings = { r2Ms: r2DurationMs, mongoMs: mongoDurationMs };
               savedDocuments.push(docRecord);
               archiveManifest.processed++;
 
@@ -177,6 +184,7 @@ export const uploadDocuments = async (req, res) => {
             }
           }
 
+          archiveManifest._zipExtractMs = zipExtractMs || 0;
           archiveResults.push(archiveManifest);
 
           if (archiveManifest.processed === 0 && archiveManifest.failed > 0) {
@@ -283,16 +291,60 @@ export const uploadDocuments = async (req, res) => {
       });
     }
 
-    // Trigger async RAG processing pipeline for all uploaded documents in background
+    // Trigger async RAG processing pipeline for all uploaded documents in background with diagnostic performance logging
     if (ragProcessingQueue.length > 0) {
       (async () => {
+        const ingStart = Date.now();
+        let totalZipExtractMs = archiveResults.reduce((acc, a) => acc + (a._zipExtractMs || 0), 0);
+        let totalDocExtractMs = 0;
+        let totalVisionMs = 0;
+        let totalChunkingMs = 0;
+        let totalEmbeddingMs = 0;
+        let totalQdrantMs = 0;
+        let totalMongoMs = savedDocuments.reduce((acc, d) => acc + (d._timings?.mongoMs || 0), 0);
+        let totalR2Ms = savedDocuments.reduce((acc, d) => acc + (d._timings?.r2Ms || 0), 0);
+        let totalChunks = 0;
+        let totalEmbedRequests = 0;
+        let totalVisionRequests = 0;
+
         for (const item of ragProcessingQueue) {
           try {
-            await processDocumentForRag(item);
+            const ragRes = await processDocumentForRag(item);
+            if (ragRes && ragRes.timings) {
+              if (ragRes.timings.isImage) {
+                totalVisionMs += ragRes.timings.extractionMs;
+                totalVisionRequests++;
+              } else {
+                totalDocExtractMs += ragRes.timings.extractionMs;
+              }
+              totalChunkingMs += ragRes.timings.chunkingMs;
+              totalEmbeddingMs += ragRes.timings.embeddingMs;
+              totalQdrantMs += ragRes.timings.qdrantMs;
+              totalMongoMs += ragRes.timings.mongoMs;
+              totalChunks += ragRes.timings.chunksCount || 0;
+              totalEmbedRequests += Math.ceil((ragRes.timings.chunksCount || 1) / 4);
+            }
           } catch (ragErr) {
             console.error(`Background RAG processing failed for ${item.filename}:`, ragErr);
           }
         }
+
+        const totalIngMs = Date.now() - ingStart + totalZipExtractMs + totalR2Ms;
+        console.log('\n========== INGESTION PERFORMANCE ==========');
+        console.log(`\nZIP extraction          ${(totalZipExtractMs / 1000).toFixed(1)}s`);
+        console.log(`Document extraction     ${(totalDocExtractMs / 1000).toFixed(1)}s`);
+        console.log(`Image/Vision processing ${(totalVisionMs / 1000).toFixed(1)}s`);
+        console.log(`Chunking                ${(totalChunkingMs / 1000).toFixed(1)}s`);
+        console.log(`Embedding generation    ${(totalEmbeddingMs / 1000).toFixed(1)}s`);
+        console.log(`Qdrant upserts          ${(totalQdrantMs / 1000).toFixed(1)}s`);
+        console.log(`MongoDB operations      ${(totalMongoMs / 1000).toFixed(1)}s`);
+        console.log(`R2 operations           ${(totalR2Ms / 1000).toFixed(1)}s`);
+        console.log(`\nFiles processed: ${ragProcessingQueue.length}`);
+        console.log(`Chunks generated: ${totalChunks}`);
+        console.log(`Embedding requests: ${totalEmbedRequests}`);
+        console.log(`Vision requests: ${totalVisionRequests}`);
+        console.log(`\nTotal: ${(totalIngMs / 1000).toFixed(1)} seconds`);
+        console.log('===========================================\n');
       })();
     }
 

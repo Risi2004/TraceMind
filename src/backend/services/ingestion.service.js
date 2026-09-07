@@ -41,6 +41,7 @@ export const processDocumentForRag = async ({
     // NOTE: Images are routed DIRECTLY to extractFromImage -> Vision Agent (Qwen3-VL)
     // without any text-only pre-extraction step.
     console.log(`[RAG Pipeline] ${isImageFile ? 'Analyzing image with Qwen3-VL Vision Agent' : 'Extracting text'} for: "${filename}"...`);
+    const tExtract0 = Date.now();
     const extractionResult = await extractDocumentText({
       buffer,
       filename,
@@ -48,6 +49,7 @@ export const processDocumentForRag = async ({
       mimeType,
       documentId,
     });
+    const extractionMs = Date.now() - tExtract0;
 
     if (!extractionResult.fullText || !extractionResult.fullText.trim()) {
       throw new Error(
@@ -63,6 +65,7 @@ export const processDocumentForRag = async ({
 
     // 3. Create semantic chunks (~1000 tokens, 10-15% overlap)
     console.log(`[RAG Pipeline] Chunking content with 10-15% overlap...`);
+    const tChunk0 = Date.now();
     const rawChunks = createDocumentChunks({
       pages: extractionResult.pages,
       fullText: extractionResult.fullText,
@@ -80,6 +83,7 @@ export const processDocumentForRag = async ({
       throw new Error('No valid text chunks could be generated.');
     }
 
+    const chunkingMs = Date.now() - tChunk0;
     console.log(
       `[RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating Nomic embeddings on RunPod Ollama...`
     );
@@ -90,10 +94,13 @@ export const processDocumentForRag = async ({
     });
 
     // 4. Generate embeddings via RunPod Ollama (Nomic Embed Text) in parallel batches
+    const tEmbed0 = Date.now();
     const embeddings = await generateBatchEmbeddings(rawChunks, 4);
+    const embeddingMs = Date.now() - tEmbed0;
 
     // 5. Store chunk text, embedding vectors, and metadata in Qdrant Cloud (NOT MongoDB)
     console.log(`[RAG Pipeline] Uploading vector chunks to Qdrant Cloud...`);
+    const tQdrant0 = Date.now();
     const qdrantResult = await upsertDocumentChunks({
       documentId,
       userId,
@@ -104,6 +111,8 @@ export const processDocumentForRag = async ({
       vectors: embeddings,
     });
 
+    const qdrantMs = Date.now() - tQdrant0;
+    const tMongo0 = Date.now();
     // 6. Only mark document 'ready' in MongoDB after all chunks are successfully stored in Qdrant
     await Document.findByIdAndUpdate(documentId, {
       status: 'ready',
@@ -120,6 +129,7 @@ export const processDocumentForRag = async ({
         processedAt: new Date(),
       },
     });
+    const mongoMs = Date.now() - tMongo0;
 
     console.log(
       `[RAG Pipeline] ${isImageFile ? 'Image' : 'Document'} "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
@@ -134,6 +144,15 @@ export const processDocumentForRag = async ({
       archiveName: parentZipName,
       relativePath,
       storage: qdrantResult.storage,
+      timings: {
+        extractionMs,
+        chunkingMs,
+        embeddingMs,
+        qdrantMs,
+        mongoMs,
+        isImage: isImageFile,
+        chunksCount: rawChunks.length,
+      },
     };
   } catch (error) {
     console.error(

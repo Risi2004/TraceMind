@@ -49,7 +49,9 @@ export const retrieveRelevantChunks = async ({
   try {
     // 1. Generate dense vector embedding for user query via RunPod Ollama (Nomic Embed Text)
     console.log(`⚡ [RAG Retrieval] Generating query embedding on RunPod GPU...`);
+    const embedStart = Date.now();
     const queryVector = await generateEmbedding(query.trim());
+    const embedDurationMs = Date.now() - embedStart;
 
     if (!queryVector || !Array.isArray(queryVector) || queryVector.length === 0) {
       throw new Error('Failed to generate embedding for search query.');
@@ -65,6 +67,7 @@ export const retrieveRelevantChunks = async ({
       limit: searchLimit,
       scoreThreshold,
     });
+    const qdrantDurationMs = Date.now() - qdrantStart;
 
 
     // Extract exact entity tokens (e.g. IT24101071, IE3010, room numbers, codes)
@@ -133,6 +136,8 @@ export const retrieveRelevantChunks = async ({
       scope: documentId && documentId !== 'all' ? documentId : 'all_documents',
       totalResults: topChunks.length,
       chunks: topChunks,
+      embedDurationMs,
+      qdrantDurationMs,
     };
 
   } catch (error) {
