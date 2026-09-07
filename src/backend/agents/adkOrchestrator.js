@@ -1,5 +1,6 @@
 import { runPlannerAgent } from './planner.agent.js';
 import { runRetrievalAgent } from './retrieval.agent.js';
+import { runVisionAgent, getVisionAgentModel } from './vision.agent.js';
 import { runEvidenceAgent } from './evidence.agent.js';
 import { runConflictAgent } from './conflict.agent.js';
 import { runSufficiencyAgent } from './sufficiency.agent.js';
@@ -13,17 +14,19 @@ import adkLogger from '../services/adkLogger.service.js';
  * Coordinates the multi-hop, iterative RAG search loop with structured evaluation telemetry:
  * 1. Planner Agent
  * 2. Retrieval Agent
- * 3. Evidence Agent
- * 4. Source Reliability & Conflict Agent
- * 5. Sufficiency Agent
- * 6. Follow-up Search Agent
- * 7. Answer Agent
+ * 3. Vision Agent (Dedicated visual/image analysis with Qwen3-VL:8b)
+ * 4. Evidence Agent
+ * 5. Source Reliability & Conflict Agent
+ * 6. Sufficiency Agent
+ * 7. Follow-up Search Agent
+ * 8. Answer Agent
  */
 
 export const executeAdkInvestigation = async ({
   query,
   userId,
   documentId,
+  scopeName = null,
   chatHistory = [],
   maxRounds,
   topK,
@@ -41,8 +44,10 @@ export const executeAdkInvestigation = async ({
   });
 
   const investigationSteps = [];
+  const executionEvents = [];
   const accumulatedChunks = [];
   const accumulatedFacts = [];
+  const accumulatedClassifiedClaims = [];
   const seenChunkIds = new Set();
   const previousQueries = [];
 
@@ -56,7 +61,7 @@ export const executeAdkInvestigation = async ({
   // -------------------------------------------------------------
   const plan = await runPlannerAgent({
     question: query,
-    scopeName: documentId ? `Document (${documentId})` : 'All Documents',
+    scopeName: scopeName || (documentId && documentId !== 'all' ? 'Target Document Asset' : 'All Documents'),
   });
 
   currentSearchQuery = plan.primaryQuery || query;
@@ -75,6 +80,19 @@ export const executeAdkInvestigation = async ({
     query: currentSearchQuery,
     details: plan.goal || `Decomposed query into targeted verification targets.`,
     found: plan.entities && plan.entities.length > 0 ? `Target Entities: ${plan.entities.join(', ')}` : undefined,
+  });
+
+  executionEvents.push({
+    agent: 'planner',
+    event: 'PLANNING_COMPLETED',
+    round: 1,
+    message: 'Planning investigation',
+    timestamp: new Date().toISOString(),
+    metadata: {
+      goal: plan.goal || 'Formulated search strategy',
+      entities: plan.entities || [],
+      primaryQuery: currentSearchQuery,
+    },
   });
 
   // -------------------------------------------------------------
@@ -109,11 +127,71 @@ export const executeAdkInvestigation = async ({
       icon: 'search',
       status: 'completed',
       query: currentSearchQuery,
-      details: `Retrieved ${retrievalResult.newChunks.length} new unique evidence passage(s) from Qdrant Cloud.`,
+      details: `Retrieved ${retrievalResult.newChunks.length} new unique evidence passage(s) from knowledge base.`,
       pagesCount: retrievalResult.newChunks.length,
     });
 
-    // 2B & 2C. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
+    executionEvents.push({
+      agent: 'retrieval',
+      event: 'SEARCH_COMPLETED',
+      round: currentRound,
+      message: `${retrievalResult.newChunks.length} relevant passage${retrievalResult.newChunks.length === 1 ? '' : 's'} found`,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        sourcesFound: retrievalResult.newChunks.length,
+        query: currentSearchQuery,
+      },
+    });
+
+    // 2B. Dedicated Vision Agent (Invoke ONLY if visual/image content is retrieved)
+    const imageChunks = (retrievalResult.newChunks || []).filter(
+      (chunk) =>
+        chunk.isImage ||
+        chunk.sourceType === 'image' ||
+        chunk.contentType === 'image' ||
+        /\.(png|jpe?g|webp)$/i.test(chunk.fileName || '')
+    );
+
+    if (imageChunks.length > 0) {
+      const visionResult = await runVisionAgent({
+        visualChunks: imageChunks,
+        fileName: imageChunks[0]?.fileName || 'Visual Evidence',
+        documentId: imageChunks[0]?.documentId || documentId,
+        pageNumber: imageChunks[0]?.pageNumber || 1,
+        question: query,
+      });
+
+      investigationSteps.push({
+        step: investigationSteps.length + 1,
+        title: `Vision Agent Evidence Inspection (Round ${currentRound})`,
+        icon: 'image',
+        status: 'completed',
+        details: visionResult.structuredEvidence?.summary || `Examined ${imageChunks.length} visual asset(s) with visual analysis engine.`,
+        found:
+          visionResult.structuredEvidence?.importantFacts && visionResult.structuredEvidence.importantFacts.length > 0
+            ? visionResult.structuredEvidence.importantFacts.slice(0, 2).join(' • ')
+            : 'Visual diagram and OCR markings verified.',
+      });
+
+      executionEvents.push({
+        agent: 'vision',
+        event: 'VISION_ANALYSIS_COMPLETED',
+        round: currentRound,
+        message: `Visual evidence extracted from ${imageChunks.length} asset${imageChunks.length === 1 ? '' : 's'}`,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          confidence: visionResult.structuredEvidence?.confidence || 'high',
+          visualChunksCount: imageChunks.length,
+          model: 'Visual Reasoning Engine',
+        },
+      });
+
+      if (visionResult.structuredEvidence?.importantFacts) {
+        accumulatedFacts.push(...visionResult.structuredEvidence.importantFacts);
+      }
+    }
+
+    // 2C & 2D. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
     const [evidenceResult, conflictReportResult] = await Promise.all([
       runEvidenceAgent({
         question: query,
@@ -133,17 +211,42 @@ export const executeAdkInvestigation = async ({
     if (evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0) {
       accumulatedFacts.push(...evidenceResult.extractedFacts);
     }
+    if (evidenceResult.classifiedClaims && evidenceResult.classifiedClaims.length > 0) {
+      accumulatedClassifiedClaims.push(...evidenceResult.classifiedClaims);
+    }
+
+    const claimsCount = evidenceResult.classifiedClaims?.length || 0;
+    const claimsDisplay =
+      claimsCount > 0
+        ? ` (${claimsCount} claim${claimsCount === 1 ? '' : 's'} calibrated: ${evidenceResult.classifiedClaims
+            .map((c) => c.level)
+            .slice(0, 3)
+            .join(', ')})`
+        : '';
 
     investigationSteps.push({
       step: investigationSteps.length + 1,
       title: `Evidence Analysis (Round ${currentRound})`,
       icon: 'layers',
       status: 'completed',
-      details: evidenceResult.summary,
+      details: `${evidenceResult.summary}${claimsDisplay}`,
       found:
         evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0
           ? evidenceResult.extractedFacts.slice(0, 2).join(' • ')
           : 'No additional facts discovered in this search round.',
+    });
+
+    executionEvents.push({
+      agent: 'evidence',
+      event: 'EVIDENCE_ANALYZED',
+      round: currentRound,
+      message: 'Analyzing retrieved evidence',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        factsExtracted: evidenceResult.extractedFacts?.length || 0,
+        claimsCalibrated: claimsCount,
+        analyzedChunks: retrievalResult.newChunks?.length || 0,
+      },
     });
 
     adkLogger.logConflictEvaluation({
@@ -151,7 +254,7 @@ export const executeAdkInvestigation = async ({
       conflictReport,
     });
 
-
+    // Only emit Conflict event if conflict was actually detected
     if (conflictReport.hasConflict) {
       investigationSteps.push({
         step: investigationSteps.length + 1,
@@ -161,16 +264,22 @@ export const executeAdkInvestigation = async ({
         details: conflictReport.assessment,
         found:
           conflictReport.conflictingSources && conflictReport.conflictingSources.length > 0
-            ? conflictReport.conflictingSources.map(s => `${s.document} (P.${s.page}): ${s.claim}`).join(' ⚡ ')
+            ? conflictReport.conflictingSources.map((s) => `${s.document} (P.${s.page}): ${s.claim}`).join(' ⚡ ')
             : 'Contradiction across document sources noted.',
       });
-    } else if (accumulatedChunks.length >= 2) {
-      investigationSteps.push({
-        step: investigationSteps.length + 1,
-        title: 'Source Consistency Verified',
-        icon: 'shield',
-        status: 'completed',
-        details: 'Cross-document consistency confirmed across all retrieved sources.',
+
+      executionEvents.push({
+        agent: 'conflict',
+        event: 'CONFLICT_DETECTED',
+        round: currentRound,
+        message: 'Conflicting evidence detected',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          conflictType: conflictReport.conflictType,
+          assessment: conflictReport.assessment,
+          resolution: conflictReport.resolution,
+          sourcesCount: conflictReport.conflictingSources?.length || 0,
+        },
       });
     }
 
@@ -179,10 +288,10 @@ export const executeAdkInvestigation = async ({
       question: query,
       accumulatedFacts,
       accumulatedChunks,
+      classifiedClaims: accumulatedClassifiedClaims,
       conflictReport,
       currentRound,
     });
-
 
     adkLogger.logSufficiencyEvaluation({
       round: currentRound,
@@ -190,6 +299,20 @@ export const executeAdkInvestigation = async ({
       confidenceScore: sufficiencyStatus.confidenceScore,
       reason: sufficiencyStatus.reason,
       missingInformation: sufficiencyStatus.missingInformation,
+    });
+
+    executionEvents.push({
+      agent: 'sufficiency',
+      event: 'SUFFICIENCY_EVALUATED',
+      round: currentRound,
+      message: sufficiencyStatus.isSufficient ? 'Evidence sufficient' : 'More evidence required',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        isSufficient: Boolean(sufficiencyStatus.isSufficient),
+        confidenceScore: sufficiencyStatus.confidenceScore,
+        reason: sufficiencyStatus.reason,
+        missingInformation: sufficiencyStatus.missingInformation,
+      },
     });
 
     if (sufficiencyStatus.isSufficient) {
@@ -230,6 +353,19 @@ export const executeAdkInvestigation = async ({
         missingInfo: sufficiencyStatus.missingInformation,
       });
 
+      executionEvents.push({
+        agent: 'followup',
+        event: 'FOLLOWUP_GENERATED',
+        round: currentRound,
+        message: 'Preparing targeted follow-up search',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          followUpQuery: currentSearchQuery,
+          searchRationale: followUpResult.searchRationale,
+          missingTarget: sufficiencyStatus.missingInformation,
+        },
+      });
+
       investigationSteps.push({
         step: investigationSteps.length + 1,
         title: `Executing Follow-up Search (Round ${currentRound + 1})`,
@@ -253,6 +389,7 @@ export const executeAdkInvestigation = async ({
     question: query,
     accumulatedChunks,
     accumulatedFacts,
+    classifiedClaims: accumulatedClassifiedClaims,
     conflictReport,
     chatHistory,
   });
@@ -267,6 +404,18 @@ export const executeAdkInvestigation = async ({
     details: `Synthesized grounded answer backed by ${accumulatedChunks.length} verified passage(s) across ${currentRound} round(s)${
       conflictReport.hasConflict ? ' (including multi-source conflict disclosures)' : ''
     }.`,
+  });
+
+  executionEvents.push({
+    agent: 'answer',
+    event: 'ANSWER_GENERATED',
+    round: currentRound,
+    message: 'Generating final answer',
+    timestamp: new Date().toISOString(),
+    metadata: {
+      sourcesUsed: accumulatedChunks.length,
+      conflictHandled: Boolean(conflictReport && conflictReport.hasConflict),
+    },
   });
 
   // Format sources for citation rendering
@@ -305,6 +454,7 @@ export const executeAdkInvestigation = async ({
     conflictReport: conflictReport.hasConflict ? conflictReport : undefined,
     sources,
     investigationSteps,
+    executionEvents,
     evaluationMetrics: {
       responseTimeMs: durationMs,
       roundsCount: currentRound,
@@ -312,8 +462,9 @@ export const executeAdkInvestigation = async ({
       topKConfigured: effectiveTopK,
       sourcesUsedCount: sources.length,
       conflictDetected: Boolean(conflictReport && conflictReport.hasConflict),
+      conflictsCount: conflictReport.hasConflict ? (conflictReport.conflictingSources?.length || 1) : 0,
     },
-    model: getOllamaLlmModel(),
+    model: 'TraceMind AI Engine',
     timestamp: new Date().toISOString(),
   };
 };
@@ -321,5 +472,6 @@ export const executeAdkInvestigation = async ({
 export default {
   executeAdkInvestigation,
 };
+
 
 

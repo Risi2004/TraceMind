@@ -21,7 +21,7 @@ const upload = multer({
     files: 50, // max 50 files per batch
   },
   fileFilter: (req, file, cb) => {
-    const allowedExtensions = ['pdf', 'docx', 'txt', 'md', 'markdown', 'zip'];
+    const allowedExtensions = ['pdf', 'docx', 'txt', 'md', 'markdown', 'zip', 'png', 'jpg', 'jpeg', 'webp'];
     const ext = (file.originalname.split('.').pop() || '').toLowerCase();
 
     if (allowedExtensions.includes(ext)) {
@@ -29,7 +29,7 @@ const upload = multer({
     } else {
       cb(
         new Error(
-          `Unsupported file format (.${ext}). Supported formats: PDF, DOCX, TXT, MD, ZIP.`
+          `Unsupported file format (.${ext}). Supported formats: PDF, DOCX, TXT, MD, ZIP, PNG, JPG, JPEG, WEBP.`
         ),
         false
       );

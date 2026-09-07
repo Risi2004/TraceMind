@@ -1,15 +1,18 @@
-import { getOllamaBaseUrl } from '../services/ollama.service.js';
-import { getOllamaLlmModel } from '../services/qwen.service.js';
+import { callTextModel } from '../services/ollama.service.js';
 
 /**
  * Source Reliability and Conflict Agent (Google ADK Architecture)
  * Responsibilities:
  * 1. Cross-examine claims and evidence coming from different documents / passages.
- * 2. Apply Evidence Hierarchy:
+ * 2. Strict Conflict Definition:
+ *    - A missing detail is NOT automatically a conflict.
+ *    - Different descriptions or complementary angles are NOT automatically contradictions.
+ *    - Only report a conflict when two pieces of evidence make genuinely incompatible claims.
+ * 3. Apply Evidence Hierarchy:
  *    - Physical maintenance records & tested forensic analysis > provisional witness impressions / digital signal assumptions.
  *    - Later retractions / corrected witness statements > initial unverified impressions.
  *    - Subsequent forensic testing > initial provisional incident classifications.
- * 3. Resolve apparent conflicts cleanly rather than declaring false inconclusiveness when stronger evidence resolves them.
+ * 4. Resolve apparent conflicts cleanly rather than declaring false inconclusiveness when stronger evidence resolves them.
  */
 
 export const runConflictAgent = async ({
@@ -30,40 +33,42 @@ export const runConflictAgent = async ({
 
   const uniqueDocNames = [...new Set(accumulatedChunks.map((c) => c.fileName || 'Unknown Doc'))];
 
-  const baseUrl = getOllamaBaseUrl();
-  const model = getOllamaLlmModel();
-
   const passagesSummary = accumulatedChunks
     .map(
       (c, i) =>
-        `[Source ${i + 1}] Document: "${c.fileName || 'Doc'}" (Page ${c.pageNumber || 1})\nContent: ${c.chunkText.slice(0, 500)}`
+        `[Source ${i + 1}] Document: "${c.fileName || 'Doc'}" (${
+          c.isImage || c.sourceType === 'image' ? 'Image Evidence' : `Page ${c.pageNumber || 1}`
+        })\nContent: ${c.chunkText.slice(0, 500)}`
     )
     .join('\n\n');
 
   const systemPrompt = `You are the Lead Source Reliability and Conflict Analysis Agent in TraceMind's reasoning system.
-Your job is to compare evidence across different documents or distinct passages to detect disagreements, contradictions, or competing accounts.
+Your job is to compare evidence across different documents or distinct passages to detect genuine disagreements, contradictions, or competing accounts.
 
-HIERARCHICAL CONFLICT RESOLUTION RULES:
-1. EVIDENCE HIERARCHY:
-   - Prefer physical verification, tested forensic evidence, and signed maintenance logs over witness guesses, transponder assumptions, or provisional interpretations.
-   - Example: If a beacon/tag signal moved but physical maintenance records prove the physical cart remained sealed/immobilized with battery removed, conclude: "The tag/signal moved, but the physical cart did not."
-2. RETRACTIONS & CORRECTIONS:
-   - If a witness or analyst subsequently retracted or corrected an earlier statement (e.g. "thought it was Mira" -> "later corrected: likely not Mira"), prioritize the corrected statement.
-3. EVOLUTION OF FORENSICS VS INITIAL REPORT:
-   - Distinguish initial provisional logging from later forensic conclusions (e.g. "The initial report recorded credential E-17, but subsequent forensic analysis proved the packet was replayed through R-19").
-4. AVOID PREMATURE "INCONCLUSIVE":
-   - Do NOT say "evidence is inconclusive" if higher-order evidence (physical logs, later forensics) resolves the apparent disagreement.
+STRICT CONFLICT EVALUATION RULES:
+1. WHAT IS NOT A CONFLICT:
+   - A missing detail in one source that is present in another is NOT a conflict.
+   - Different or complementary descriptions of the same scene/object are NOT contradictions.
+   - Different parts of an image or document describing different aspects (e.g. map route vs manifest items) are NOT conflicts.
+2. WHAT IS A CONFLICT:
+   - Only flag a conflict when two distinct pieces of evidence make genuinely incompatible, contradictory factual assertions (e.g., Doc A says "Delivered on May 10" while Doc B says "Never delivered"; or Doc A says "Officer Smith was in room" while forensic badge log proves "Smith was offsite").
+3. EVIDENCE HIERARCHY FOR RESOLUTION:
+   - Prefer physical verification, tested forensic evidence, and signed maintenance logs over witness guesses, transponder assumptions, or provisional impressions.
+   - Prefer subsequent witness retractions or formal corrections over initial unverified impressions.
+   - Prefer subsequent forensic test results over initial provisional logging.
+4. DO NOT PREMATURELY DECLARE INCONCLUSIVE:
+   - If higher-order evidence (e.g. physical logs, forensics) resolves the apparent disagreement, explain the resolution.
 
 Output strict JSON with format:
 {
   "hasConflict": true or false,
-  "conflictType": "physical_vs_signal" | "initial_vs_forensic" | "witness_retraction" | "factual_contradiction" | "date_discrepancy" | "none",
+  "conflictType": "genuine_contradiction" | "physical_vs_signal" | "initial_vs_forensic" | "witness_retraction" | "none",
   "conflictingSources": [
     { "document": "Doc A", "page": 1, "claim": "...", "reliability": "..." }
   ],
-  "assessment": "Clear summary of the disagreement and how the evidence hierarchy resolves it.",
+  "assessment": "Clear summary of the disagreement and resolution (or 'Evidence across reviewed passages is consistent').",
   "resolution": "resolved" | "unresolved" | "no_conflict",
-  "resolvedFinding": "The definitive factual takeaway after applying the evidence hierarchy (or null if truly unresolved)."
+  "resolvedFinding": "The definitive factual takeaway after applying the evidence hierarchy (or null if no conflict or unresolved)."
 }`;
 
   const userPrompt = `User Question: "${question}"
@@ -72,36 +77,18 @@ Distinct Documents Examined: [${uniqueDocNames.join(', ')}]
 RETRIEVED PASSAGES TO CROSS-EXAMINE:
 ${passagesSummary}
 
-Analyze conflicts, hierarchy, and resolution in JSON:`;
+Analyze genuine contradictions and resolution in JSON:`;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.1, num_predict: 384, num_ctx: 4096 },
-      }),
-      signal: controller.signal,
+    const rawContent = await callTextModel({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      format: 'json',
+      temperature: 0.1,
+      timeoutMs: 30000,
     });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Conflict LLM call failed with HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.message?.content || data.response || '{}';
 
     let parsed;
     try {
@@ -139,4 +126,3 @@ Analyze conflicts, hierarchy, and resolution in JSON:`;
 };
 
 export default { runConflictAgent };
-

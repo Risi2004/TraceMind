@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   FileTextIcon,
+  ImageIcon,
   SearchIcon,
   FilterIcon,
   TrashIcon,
@@ -49,7 +50,9 @@ export const DocumentsView = ({
       filename.includes(query);
 
     const matchesFormat =
-      selectedFormat === 'all' || format === selectedFormat.toLowerCase();
+      selectedFormat === 'all' ||
+      format === selectedFormat.toLowerCase() ||
+      (selectedFormat === 'image' && ['image', 'png', 'jpg', 'jpeg', 'webp'].includes(format));
 
     const matchesStatus =
       selectedStatus === 'all' || status === selectedStatus.toLowerCase();
@@ -66,6 +69,8 @@ export const DocumentsView = ({
       case 'ready':
       case 'indexed':
         return 'status-ready';
+      case 'analyzing':
+        return 'status-analyzing';
       case 'processing':
         return 'status-processing';
       case 'failed':
@@ -89,7 +94,7 @@ export const DocumentsView = ({
               <span className="documents-count-pill">{documents.length} Files</span>
             </div>
             <p className="documents-view-subtitle">
-              Stored securely in private Cloudflare R2 bucket. Upload documents from the Chat workspace.
+              Stored securely in encrypted cloud storage. Upload documents or images from the Chat workspace.
             </p>
           </div>
         </div>
@@ -100,7 +105,7 @@ export const DocumentsView = ({
         <div className="stat-card">
           <span className="stat-label">Total Documents</span>
           <span className="stat-value">{documents.length}</span>
-          <span className="stat-meta">Cloudflare R2 Objects</span>
+          <span className="stat-meta">Active Documents</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Total Storage Used</span>
@@ -108,14 +113,14 @@ export const DocumentsView = ({
           <span className="stat-meta">Encrypted & Isolated</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Storage Provider</span>
-          <span className="stat-value">Cloudflare R2</span>
-          <span className="stat-meta">Private S3 API Bucket</span>
+          <span className="stat-label">Storage Status</span>
+          <span className="stat-value">Secure Storage</span>
+          <span className="stat-meta">Encrypted Cloud Vault</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Access Control</span>
           <span className="stat-value-status">Private & Scoped</span>
-          <span className="stat-meta">15m Presigned URLs</span>
+          <span className="stat-meta">Authorized Access Only</span>
         </div>
       </div>
 
@@ -154,7 +159,8 @@ export const DocumentsView = ({
             >
               <option value="all">All Statuses</option>
               <option value="uploaded">Uploaded</option>
-              <option value="processing">Processing</option>
+              <option value="analyzing">Analyzing (Vision)</option>
+              <option value="processing">Processing (RAG)</option>
               <option value="indexed">Indexed</option>
               <option value="ready">Ready</option>
               <option value="failed">Failed</option>
@@ -172,6 +178,7 @@ export const DocumentsView = ({
             >
               <option value="all">All Formats</option>
               <option value="pdf">PDF Documents</option>
+              <option value="image">Images (PNG/JPG/WEBP)</option>
               <option value="docx">Word (DOCX)</option>
               <option value="txt">Text (TXT)</option>
               <option value="md">Markdown (MD)</option>
@@ -192,7 +199,7 @@ export const DocumentsView = ({
       {isLoading && (
         <div className="documents-loading-state">
           <div className="loading-spinner-ring" />
-          <span>Loading documents from Cloudflare R2...</span>
+          <span>Loading documents from storage...</span>
         </div>
       )}
 
@@ -207,7 +214,7 @@ export const DocumentsView = ({
           </h3>
           <p className="empty-desc">
             {documents.length === 0
-              ? 'Upload your PDF, DOCX, TXT, Markdown, or ZIP files directly from the Chat workspace using the attachment button or drag & drop.'
+              ? 'Upload your PDF, DOCX, TXT, Markdown, Images (PNG/JPG/WEBP), or ZIP files directly from the Chat workspace using the attachment button or drag & drop.'
               : 'Try adjusting your search query or format filters.'}
           </p>
         </div>
@@ -260,8 +267,8 @@ export const DocumentsView = ({
                     {doc.metadata?.chunksCount !== undefined && doc.metadata.chunksCount > 0 && (
                       <>
                         <span className="doc-meta-divider">•</span>
-                        <span className="doc-meta-item chunks-pill" title={`${doc.metadata.chunksCount} RAG Vector Chunks`}>
-                          <span>{doc.metadata.chunksCount} Chunks</span>
+                        <span className="doc-meta-item chunks-pill" title={`${doc.metadata.chunksCount} Indexed Passages`}>
+                          <span>{doc.metadata.chunksCount} Passages</span>
                         </span>
                       </>
                     )}
@@ -302,7 +309,7 @@ export const DocumentsView = ({
                     type="button"
                     className="btn-card-action secondary"
                     onClick={() => onViewDocument && onViewDocument(docId, doc)}
-                    title="Securely View / Download from Cloudflare R2"
+                    title="Securely View / Download Document"
                   >
                     <ExternalLinkIcon size={14} />
                   </button>
@@ -312,7 +319,7 @@ export const DocumentsView = ({
                       type="button"
                       className="btn-card-action danger"
                       onClick={() => {
-                        if (window.confirm(`Are you sure you want to permanently delete "${displayTitle}" from Cloudflare R2 storage?`)) {
+                        if (window.confirm(`Are you sure you want to permanently delete "${displayTitle}" from storage?`)) {
                           onDeleteDocument(docId);
                         }
                       }}

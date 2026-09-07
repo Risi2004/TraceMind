@@ -18,36 +18,45 @@ export const processDocumentForRag = async ({
   buffer,
   filename,
   fileType,
+  mimeType,
 }) => {
-  console.log(`\n⚙️ [RAG Pipeline] Processing document: "${filename}" (ID: ${documentId})`);
+  const isImageFile =
+    fileType === 'IMAGE' ||
+    (mimeType && mimeType.startsWith('image/')) ||
+    /\.(png|jpg|jpeg|webp)$/i.test(filename);
+
+  console.log(`\n⚙️ [RAG Pipeline] Processing ${isImageFile ? 'image' : 'document'}: "${filename}" (ID: ${documentId})`);
 
   try {
-    // 1. Mark document status as 'processing' in MongoDB
+    // 1. Mark status as 'processing' or 'analyzing' in MongoDB
     await Document.findByIdAndUpdate(documentId, {
-      status: 'processing',
+      status: isImageFile ? 'analyzing' : 'processing',
       errorMessage: null,
     });
 
-    // 2. Extract text from document buffer (PDF / DOCX / TXT / Markdown)
-    console.log(`📄 [RAG Pipeline] Extracting text for: "${filename}"...`);
+    // 2. Extract text/vision evidence from document or image buffer
+    console.log(`📄 [RAG Pipeline] ${isImageFile ? 'Analyzing image with Qwen-VL' : 'Extracting text'} for: "${filename}"...`);
     const extractionResult = await extractDocumentText({
       buffer,
       filename,
       fileType,
+      mimeType,
     });
 
     if (!extractionResult.fullText || !extractionResult.fullText.trim()) {
       throw new Error(
-        'Document appears empty or contains no extractable text.'
+        isImageFile
+          ? 'Vision analysis produced no extractable evidence from image.'
+          : 'Document appears empty or contains no extractable text.'
       );
     }
 
     console.log(
-      `✅ [RAG Pipeline] Extracted ${extractionResult.fullText.length} characters across ${extractionResult.totalPages} page(s).`
+      `✅ [RAG Pipeline] Extracted ${extractionResult.fullText.length} characters across ${extractionResult.totalPages} page/image unit(s).`
     );
 
     // 3. Create semantic chunks (~1000 tokens, 10-15% overlap)
-    console.log(`🧩 [RAG Pipeline] Chunking text with 10-15% overlap...`);
+    console.log(`🧩 [RAG Pipeline] Chunking content with 10-15% overlap...`);
     const rawChunks = createDocumentChunks({
       pages: extractionResult.pages,
       fullText: extractionResult.fullText,
@@ -59,12 +68,17 @@ export const processDocumentForRag = async ({
     });
 
     if (rawChunks.length === 0) {
-      throw new Error('No valid text chunks could be generated from document.');
+      throw new Error('No valid text chunks could be generated.');
     }
 
     console.log(
       `✅ [RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating Nomic embeddings on RunPod Ollama...`
     );
+
+    // Update status to 'processing' before embeddings
+    await Document.findByIdAndUpdate(documentId, {
+      status: 'processing',
+    });
 
     // 4. Generate embeddings via RunPod Ollama (Nomic Embed Text) in parallel batches
     const embeddings = await generateBatchEmbeddings(rawChunks, 4);
@@ -85,13 +99,16 @@ export const processDocumentForRag = async ({
       metadata: {
         chunksCount: rawChunks.length,
         totalPages: extractionResult.totalPages,
+        isImage: isImageFile,
+        sourceType: isImageFile ? 'image' : 'document',
+        visionModel: extractionResult.model || null,
         vectorStorage: qdrantResult.storage || 'qdrant_cloud',
         processedAt: new Date(),
       },
     });
 
     console.log(
-      `🎉 [RAG Pipeline] Document "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
+      `🎉 [RAG Pipeline] ${isImageFile ? 'Image' : 'Document'} "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
     );
 
     return {
@@ -99,6 +116,7 @@ export const processDocumentForRag = async ({
       documentId,
       chunksCount: rawChunks.length,
       totalPages: extractionResult.totalPages,
+      isImage: isImageFile,
       storage: qdrantResult.storage,
     };
   } catch (error) {

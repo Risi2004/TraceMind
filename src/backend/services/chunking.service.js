@@ -174,23 +174,40 @@ export const createDocumentChunks = ({
   const totalChunks = allRawChunks.length;
 
   // Enrich with required metadata
-  return allRawChunks.map((chunk, index) => ({
-    documentId,
-    userId,
-    fileName,
-    chunkIndex: index,
-    totalChunks,
-    pageNumber: chunk.pageNumber || 1,
-    text: chunk.text,
-    charCount: chunk.text.length,
-    tokenCount: chunk.tokenCount || estimateTokenCount(chunk.text),
-    metadata: {
-      chunkNumber: index + 1,
+  return allRawChunks.map((chunk, index) => {
+    const isImageChunk = Boolean(chunk.isImage || (pages[0] && pages[0].isImage));
+    const sourceType = isImageChunk ? 'image' : 'document';
+    const contentType = isImageChunk ? 'image' : 'document';
+    const visionModel = isImageChunk ? (process.env.OLLAMA_VISION_MODEL || 'qwen3-vl:8b').trim() : null;
+
+    return {
+      documentId,
+      userId,
+      fileName,
+      chunkIndex: index,
       totalChunks,
       pageNumber: chunk.pageNumber || 1,
-      fileName,
-    },
-  }));
+      imageIndex: isImageChunk ? 0 : undefined,
+      text: chunk.text,
+      charCount: chunk.text.length,
+      tokenCount: chunk.tokenCount || estimateTokenCount(chunk.text),
+      isImage: isImageChunk,
+      sourceType,
+      contentType,
+      visionModel,
+      metadata: {
+        chunkNumber: index + 1,
+        totalChunks,
+        pageNumber: chunk.pageNumber || 1,
+        imageIndex: isImageChunk ? 0 : undefined,
+        fileName,
+        isImage: isImageChunk,
+        sourceType,
+        contentType,
+        visionModel,
+      },
+    };
+  });
 };
 
 export default {

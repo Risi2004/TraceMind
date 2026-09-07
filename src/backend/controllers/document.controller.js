@@ -12,8 +12,8 @@ import { processDocumentForRag } from '../services/ingestion.service.js';
 import { deleteDocumentVectors } from '../services/qdrant.service.js';
 
 
-// Allowed file extensions
-const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt', 'md', 'markdown'];
+// Allowed file extensions (Documents & Images)
+const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt', 'md', 'markdown', 'png', 'jpg', 'jpeg', 'webp'];
 const ZIP_EXTENSIONS = ['zip'];
 
 // Maximum bounds for ZIP decompression safety
@@ -221,6 +221,7 @@ export const uploadDocuments = async (req, res) => {
             buffer: file.buffer,
             filename: cleanFilename,
             fileType,
+            mimeType: file.mimetype || 'application/octet-stream',
           });
         } catch (uploadErr) {
           console.error(`Upload error for ${originalName}:`, uploadErr);
@@ -232,7 +233,7 @@ export const uploadDocuments = async (req, res) => {
       } else {
         errors.push({
           file: originalName,
-          error: `Unsupported file type (.${fileExt}). Supported formats: PDF, DOCX, TXT, MD, ZIP.`,
+          error: `Unsupported file type (.${fileExt}). Supported formats: PDF, DOCX, TXT, MD, ZIP, PNG, JPG, JPEG, WEBP.`,
         });
       }
     }

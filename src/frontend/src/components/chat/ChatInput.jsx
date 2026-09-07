@@ -5,6 +5,7 @@ import {
   SparklesIcon,
   AlertCircleIcon,
   FileTextIcon,
+  ImageIcon,
   XIcon,
   UploadCloudIcon
 } from '../common/Icons';
@@ -18,6 +19,14 @@ const formatFileSize = (bytes) => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+};
+
+const isImageFile = (file) => {
+  if (!file) return false;
+  return (
+    (file.type && file.type.startsWith('image/')) ||
+    /\.(png|jpg|jpeg|webp)$/i.test(file.name)
+  );
 };
 
 export const ChatInput = ({
@@ -37,6 +46,7 @@ export const ChatInput = ({
   const [stagedFiles, setStagedFiles] = useState([]);
   const [showTooltip, setShowTooltip] = useState(false);
   const [sizeError, setSizeError] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -70,6 +80,118 @@ export const ChatInput = ({
     });
   };
 
+  // Helper to extract image/document files from ClipboardEvent
+  const extractClipboardFiles = (clipboardData) => {
+    if (!clipboardData) return [];
+
+    const filesFound = [];
+
+    // 1. Check clipboard files first
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file && (isImageFile(file) || file.type.startsWith('image/'))) {
+          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, '0');
+          const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+          const isGenericName = !file.name || file.name === 'image.png' || file.name === 'blob' || file.name === 'screenshot.png';
+          const finalName = isGenericName ? `screenshot_${dateStr}.${ext}` : file.name;
+
+          const namedFile = new File([file], finalName, {
+            type: file.type || 'image/png',
+            lastModified: Date.now()
+          });
+          filesFound.push(namedFile);
+        } else if (file) {
+          filesFound.push(file);
+        }
+      }
+    }
+
+    // 2. Check clipboard items (for direct screenshot pastes from OS clipboard e.g. Snipping Tool / Win+Shift+S)
+    if (filesFound.length === 0 && clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          if (blob) {
+            const ext = item.type.split('/')[1] || 'png';
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+            const file = new File([blob], `screenshot_${dateStr}.${ext}`, {
+              type: item.type,
+              lastModified: Date.now()
+            });
+            filesFound.push(file);
+          }
+        }
+      }
+    }
+
+    return filesFound;
+  };
+
+  const handlePaste = (e) => {
+    const clipboardData = e.clipboardData || window.clipboardData;
+    const imageOrDocFiles = extractClipboardFiles(clipboardData);
+    if (imageOrDocFiles.length > 0) {
+      e.preventDefault();
+      handleAddFiles(imageOrDocFiles);
+    }
+  };
+
+  // Window-level paste listener so user can paste screenshot anywhere in chat view
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      const activeEl = document.activeElement;
+      const isOtherInput =
+        activeEl &&
+        activeEl !== textareaRef.current &&
+        (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+
+      if (isOtherInput) return;
+
+      const clipboardData = e.clipboardData || window.clipboardData;
+      const imageOrDocFiles = extractClipboardFiles(clipboardData);
+      if (imageOrDocFiles.length > 0) {
+        e.preventDefault();
+        handleAddFiles(imageOrDocFiles);
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, []);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!disabled && !isUploading && !isVectorizing) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (disabled || isUploading || isVectorizing) return;
+
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      handleAddFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
   const handleRemoveStagedFile = (indexToRemove) => {
     setSizeError('');
     setStagedFiles((prev) => {
@@ -99,30 +221,35 @@ export const ChatInput = ({
   const isSubmitBlocked =
     (!text.trim() && stagedFiles.length === 0) ||
     disabled ||
-    isVectorizing ||
     isUploading ||
+    isVectorizing ||
     Boolean(sizeError);
 
   const handleSubmit = async (e) => {
-    e?.preventDefault();
+    e.preventDefault();
     if (isSubmitBlocked) return;
 
-    // If user has staged files, trigger their upload
+    // If there are staged files, upload and trigger analysis
     if (stagedFiles.length > 0) {
       const filesToUpload = [...stagedFiles];
+      const messageText = text.trim();
       setStagedFiles([]);
+      setText('');
+
       if (onUploadFiles) {
-        onUploadFiles(filesToUpload);
+        await onUploadFiles(filesToUpload);
       }
+      if (messageText && onSendMessage) {
+        onSendMessage(messageText);
+      }
+      return;
     }
 
-    // Send question if text is present
-    if (text.trim()) {
-      onSendMessage(text.trim());
+    // Normal text message
+    if (text.trim() && onSendMessage) {
+      const messageText = text.trim();
       setText('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
+      onSendMessage(messageText);
     }
   };
 
@@ -134,19 +261,16 @@ export const ChatInput = ({
   };
 
   const handleFileInputChange = (e) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleAddFiles(Array.from(files));
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    if (e.target.files && e.target.files.length > 0) {
+      handleAddFiles(Array.from(e.target.files));
+      e.target.value = ''; // Reset input so same file can be re-selected
     }
   };
 
   const getBlockedReason = () => {
     if (sizeError) return sizeError;
     if (isVectorizing || isUploading) {
-      return `Document vectorization in progress (${Math.round(vectorizingProgress)}% complete). Please wait until embeddings are saved to Qdrant Cloud before submitting.`;
+      return `Document processing in progress (${Math.round(vectorizingProgress)}% complete). Please wait until documents are indexed before submitting.`;
     }
     if (!text.trim() && stagedFiles.length === 0) {
       return 'Type your question or attach documents to submit.';
@@ -158,47 +282,42 @@ export const ChatInput = ({
   };
 
   return (
-    <div className="chat-input-sticky-footer">
-      <div className="chat-input-container">
-        {/* Scope Pill Badge & Status */}
-        <div className="chat-input-header-bar">
-          <button
-            type="button"
-            className="input-scope-indicator"
-            onClick={onTriggerScopeSelect}
-            title="Click to switch search scope"
-          >
-            <span className="dot-active"></span>
-            <span>
-              Target Scope: <strong>{activeScopeName}</strong>
-            </span>
-          </button>
-
-          {/* Vectorizing Status Tag in Input Bar Header */}
-          {isVectorizing && (
-            <div className="input-vectorizing-badge" title={getBlockedReason()}>
-              <span className="vectorizing-pulse-dot" />
-              <span>Vectorizing ({Math.round(vectorizingProgress)}%)</span>
-            </div>
-          )}
-
-          <span className="ai-model-tag">
-            <SparklesIcon size={12} />
-            <span>TraceMind Reasoning v2</span>
-          </span>
-        </div>
-
-        {/* Active Multi-Document Scope Chips (if multiple documents are selected) */}
+    <div
+      className={`chat-input-outer-container ${isDragOver ? 'is-drag-over' : ''}`}
+      onPaste={handlePaste}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="container chat-input-inner">
+        {/* Active Multi-Document Scope Chip Tray */}
         {activeScopeDocs && activeScopeDocs.length > 0 && (
-          <div className="active-scope-chips-container">
-            <span className="scope-chips-label">Active Documents:</span>
-            <div className="scope-chips-scroll-wrap">
+          <div className="active-scope-tray" aria-label="Active Search Scope">
+            <div className="active-scope-tray-header">
+              <span className="scope-tray-label">Active Scopes ({activeScopeDocs.length}):</span>
+              {onTriggerScopeSelect && (
+                <button
+                  type="button"
+                  className="btn-add-more-scope"
+                  onClick={onTriggerScopeSelect}
+                  title="Add more documents to search scope"
+                >
+                  + Add / Change Scope
+                </button>
+              )}
+            </div>
+            <div className="active-scope-chips-list">
               {activeScopeDocs.map((doc) => {
                 const docId = doc._id || doc.id;
                 const title = doc.title || doc.filename || 'Document';
+                const isImageDoc = doc.fileType === 'IMAGE' || isImageFile(doc);
                 return (
                   <div key={docId} className="active-scope-chip" title={doc.filename || title}>
-                    <FileTextIcon size={12} className="chip-doc-icon" />
+                    {isImageDoc ? (
+                      <ImageIcon size={12} className="chip-doc-icon text-cyan" />
+                    ) : (
+                      <FileTextIcon size={12} className="chip-doc-icon" />
+                    )}
                     <span className="chip-doc-name">{title}</span>
                     {onRemoveScopeDoc && (
                       <button
@@ -223,7 +342,7 @@ export const ChatInput = ({
           <div className="staged-attachments-tray">
             <div className="staged-tray-header">
               <span className="staged-tray-title">
-                Attached Files ({stagedFiles.length} • {formatFileSize(totalStagedBytes)})
+                Attached Files & Images ({stagedFiles.length} • {formatFileSize(totalStagedBytes)})
               </span>
               <div className="staged-tray-actions">
                 {sizeError ? (
@@ -255,24 +374,31 @@ export const ChatInput = ({
             </div>
 
             <div className="staged-files-list">
-              {stagedFiles.map((file, idx) => (
-                <div key={`${file.name}_${idx}`} className="staged-file-chip">
-                  <FileTextIcon size={13} className="staged-icon" />
-                  <span className="staged-filename" title={file.name}>
-                    {file.name}
-                  </span>
-                  <span className="staged-filesize">{formatFileSize(file.size)}</span>
-                  <button
-                    type="button"
-                    className="staged-remove-btn"
-                    onClick={() => handleRemoveStagedFile(idx)}
-                    title={`Remove ${file.name}`}
-                    aria-label={`Remove ${file.name}`}
-                  >
-                    <XIcon size={12} />
-                  </button>
-                </div>
-              ))}
+              {stagedFiles.map((file, idx) => {
+                const isImg = isImageFile(file);
+                return (
+                  <div key={`${file.name}_${idx}`} className={`staged-file-chip ${isImg ? 'is-image-chip' : ''}`}>
+                    {isImg ? (
+                      <ImageIcon size={13} className="staged-icon text-cyan" />
+                    ) : (
+                      <FileTextIcon size={13} className="staged-icon" />
+                    )}
+                    <span className="staged-filename" title={file.name}>
+                      {file.name}
+                    </span>
+                    <span className="staged-filesize">{formatFileSize(file.size)}</span>
+                    <button
+                      type="button"
+                      className="staged-remove-btn"
+                      onClick={() => handleRemoveStagedFile(idx)}
+                      title={`Remove ${file.name}`}
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <XIcon size={12} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -282,7 +408,7 @@ export const ChatInput = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.txt,.md,.markdown,.zip"
+          accept=".pdf,.docx,.txt,.md,.markdown,.zip,.png,.jpg,.jpeg,.webp,image/*"
           style={{ display: 'none' }}
           onChange={handleFileInputChange}
           disabled={disabled || isUploading || isVectorizing}
@@ -290,23 +416,27 @@ export const ChatInput = ({
 
         {/* Input Bar Form */}
         <form
-          className={`chat-form-box ${isVectorizing ? 'vectorizing-mode' : ''}`}
+          className={`chat-form-box ${isVectorizing ? 'vectorizing-mode' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
           onSubmit={handleSubmit}
+          onPaste={handlePaste}
         >
           <textarea
             ref={textareaRef}
             rows={1}
             className="chat-textarea"
             placeholder={
-              isVectorizing
-                ? 'Type your question here while document vectorization completes...'
+              isDragOver
+                ? 'Drop your screenshot or files here...'
+                : isVectorizing
+                ? 'Type your question here while document & image vectorization completes...'
                 : stagedFiles.length > 0
-                ? 'Ask a question about these attached files, or press Send to upload...'
-                : 'Ask anything about your connected documents... (e.g., summarize key findings)'
+                ? 'Ask a question about these attached documents & images, or press Send...'
+                : 'Ask anything, or paste a screenshot (Ctrl+V) to analyze...'
             }
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={disabled}
             aria-label="Ask a question about your documents"
           />
@@ -321,9 +451,9 @@ export const ChatInput = ({
               title={
                 isUploading || isVectorizing
                   ? 'Vectorization in progress...'
-                  : 'Attach multiple documents (PDF, DOCX, TXT, MD, ZIP up to 300MB)'
+                  : 'Attach documents or images (PDF, DOCX, TXT, MD, PNG, JPG, WEBP, ZIP up to 300MB)'
               }
-              aria-label="Attach documents"
+              aria-label="Attach documents and images"
               disabled={disabled || isUploading || isVectorizing}
             >
               <PaperclipIcon size={18} />
@@ -357,14 +487,14 @@ export const ChatInput = ({
                 <div className="vectorize-blocked-tooltip" role="tooltip">
                   <div className="tooltip-header">
                     <AlertCircleIcon size={14} />
-                    <span>{sizeError ? 'Upload Limit Exceeded' : 'Vectorization in Progress'}</span>
+                    <span>{sizeError ? 'Upload Limit Exceeded' : 'Processing in Progress'}</span>
                   </div>
                   <p className="tooltip-body">
                     {sizeError ||
                       vectorizingMessage ||
-                      `Processing embeddings on RunPod GPU (${Math.round(
+                      `Processing document embeddings (${Math.round(
                         vectorizingProgress
-                      )}%). Submit will unlock automatically when saved to Qdrant.`}
+                      )}%). Submit will unlock automatically when indexing is complete.`}
                   </p>
                   {!sizeError && (
                     <div className="tooltip-progress-mini">
@@ -386,7 +516,7 @@ export const ChatInput = ({
             <span className="notice-icon">⚡</span>
             <span>
               <strong>Draft your prompt:</strong> You can type your question right now. The send
-              button will unlock automatically once embeddings are stored in Qdrant Cloud.
+              button will unlock automatically once document processing is complete.
             </span>
           </div>
         )}

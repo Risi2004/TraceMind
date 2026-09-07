@@ -9,11 +9,12 @@ export const runAnswerAgent = async ({
   question,
   accumulatedChunks = [],
   accumulatedFacts = [],
+  classifiedClaims = [],
   conflictReport = null,
   chatHistory = [],
 }) => {
   console.log(
-    `✍️ [Answer Agent] Synthesizing final grounded response from ${accumulatedChunks.length} verified chunk(s) (Conflict: ${
+    `✍️ [Answer Agent] Synthesizing final grounded response from ${accumulatedChunks.length} verified chunk(s) (${classifiedClaims.length} calibrated claim(s), Conflict: ${
       conflictReport && conflictReport.hasConflict ? 'DETECTED' : 'None'
     })...`
   );
@@ -21,6 +22,7 @@ export const runAnswerAgent = async ({
   const finalAnswer = await generateGroundedAnswer({
     question,
     contextChunks: accumulatedChunks,
+    classifiedClaims,
     conflictReport,
     chatHistory,
   });

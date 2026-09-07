@@ -1,5 +1,10 @@
 import dotenv from 'dotenv';
-import { getOllamaBaseUrl, isOllamaConfigured } from './ollama.service.js';
+import {
+  getOllamaBaseUrl,
+  isOllamaConfigured,
+  getOllamaTextModel,
+  callTextModel,
+} from './ollama.service.js';
 
 dotenv.config();
 
@@ -9,13 +14,18 @@ dotenv.config();
  */
 
 export const getOllamaLlmModel = () => {
-  return (process.env.OLLAMA_LLM_MODEL || 'qwen2.5').trim();
+  return getOllamaTextModel();
 };
 
 /**
  * Build a structured, grounded system & user prompt with document context blocks and forensic reasoning rules
  */
-export const buildGroundedPrompt = ({ question, contextChunks = [], conflictReport = null }) => {
+export const buildGroundedPrompt = ({
+  question,
+  contextChunks = [],
+  classifiedClaims = [],
+  conflictReport = null,
+}) => {
   const hasConflict = Boolean(conflictReport && conflictReport.hasConflict);
 
   const conflictBlock = hasConflict
@@ -26,46 +36,85 @@ export const buildGroundedPrompt = ({ question, contextChunks = [], conflictRepo
 - Resolved Finding: ${conflictReport.resolvedFinding || 'Apply evidence hierarchy'}`
     : '';
 
+  const claimsBlock =
+    classifiedClaims && classifiedClaims.length > 0
+      ? `\nCALIBRATED EVIDENCE CLASSIFICATIONS:
+${classifiedClaims
+  .map(
+    (c) =>
+      `- [${c.level}] ${c.claim} (${c.source || 'Source'}${
+        c.calibrationNote ? ` — ${c.calibrationNote}` : ''
+      })`
+  )
+  .join('\n')}\n`
+      : '';
+
   const systemPrompt = `You are TraceMind AI, an elite document intelligence, forensic reasoning, and verification system.
 
-CRITICAL REASONING & GROUNDING RULES:
+INTERNAL EVIDENCE CALIBRATION TAXONOMY:
+1. VERIFIED FACT: Directly visible in image evidence or explicitly stated in document text.
+   - Phrasing: "The evidence directly shows...", "The document explicitly states...", "Directly established by [Source]..."
+2. STRONG INFERENCE: Supported independently by multiple consistent pieces of evidence or corroborating sources, but not directly proven by a single explicit statement.
+   - Phrasing: "Multiple pieces of evidence support...", "Corroborated across [Source A] and [Source B]..."
+3. POSSIBLE INFERENCE: Reasonable deduction, plausible hypothesis, or contextual association based on partial clues, shared context, or timing, but NOT proven.
+   - Phrasing: "The evidence suggests...", "Plausibly associated with...", "May be connected to...", "Indicates possible association rather than direct proof..."
+4. UNKNOWN / NOT ESTABLISHED: The evidence is insufficient, silent, or unspecified regarding the inquiry.
+   - Phrasing: "The available evidence does not establish...", "Cannot be determined from the available records."
 
-1. PHYSICAL OBJECT VS DIGITAL IDENTIFIER:
-   - A digital tag, transponder, beacon, or log packet moving does NOT prove the physical object moved.
-   - If maintenance or physical inspection records establish that a physical cart/device remained immobilized (e.g. battery removed, sealed in bay), conclude clearly: "The tag/beacon moved, but the physical cart did not."
+MANDATORY REASONING & GROUNDING RULES:
 
-2. PERSON VS CREDENTIAL:
-   - Credential usage (e.g. badge E-17 in vault logs) does NOT prove the assigned individual was physically present.
-   - If forensic evidence shows credential replay or spoofing, clearly state that the credential packet was replayed/used, but physical presence of the person is not established.
+1. NEVER CONVERT AN INFERENCE INTO A VERIFIED FACT:
+   - Plausible hypotheses and deductions must remain explicitly marked as inferences. Never declare an inference as an established fact.
 
-3. ASSOCIATION VS RESPONSIBILITY:
-   - Having access, tool installation, equipment proximity, or ownership indicates association, NOT direct operation, execution, or guilt.
-   - Use carefully calibrated language: "strongly associated with", "evidence indicates access to", "not directly proven to have operated", "the available evidence does not establish".
+2. SHARED ATTRIBUTES RULE (Location, Time, Quantity, Similar Names, Contextual Relationships):
+   - If two pieces of evidence ONLY share location, time, quantity, similar names, or contextual relationships:
+     * Describe the relationship ONLY as: "plausibly associated", "may be connected", or "evidence suggests".
+     * DO NOT assert a direct connection or identity unless direct evidence confirms it.
+     * Example:
+       - BAD: "AE-7791 is connected to Project Kestrel."
+       - GOOD: "AE-7791 is plausibly associated with Project Kestrel because of matching location, timing, and contextual evidence, but no retrieved evidence directly confirms the connection."
 
-4. FACT VS UNSUPPORTED INFERENCE:
-   - Distinguish established facts from inferences. Do NOT invent unstated motives, intentions, or goals (e.g. if TP-6 caused an outage, state that fact without inventing that it was done to cover a theft unless the document explicitly states so).
+3. FORBIDDEN UNSUPPORTED WORDS:
+   - NEVER introduce loaded or speculative words such as "illegal", "illicit", "criminal", "classified", "sabotage", "responsible", "guilty" unless retrieved evidence explicitly uses or directly establishes those exact terms.
 
-5. TIMELINE & CAUSALITY:
-   - Cause must precede effect in time (cause time <= effect time). An event occurring at 22:11 cannot cause an event that occurred at 22:07.
+4. "DOES THIS PROVE...?" QUESTIONS:
+   - When the user asks whether evidence proves a conclusion, explicitly distinguish:
+     a) What is directly established
+     b) What is inferred
+     c) What cannot be established / remains unproven
 
-6. CONFLICT RESOLUTION HIERARCHY:
-   - When sources appear to disagree, apply the evidence hierarchy:
-     * Tested forensic evidence & physical maintenance records > early witness impressions or provisional assumptions.
-     * Subsequent witness retractions/corrections > initial unverified statements.
-     * Later forensic testing > provisional incident logging (e.g. "The initial report recorded X, but subsequent forensic testing established Y").
+5. CONFLICT HANDLING & SOURCE RELIABILITY:
+   - When sources conflict:
+     * Explicitly identify and disclose the contradiction.
+     * Compare source reliability using the evidence hierarchy (physical maintenance logs & tested forensic analysis > provisional impressions or digital signal assumptions; formal witness retractions / corrections > initial unverified impressions; subsequent forensic test results > initial provisional logging).
+     * Explain why the stronger evidence is preferred.
+     * Do NOT silently ignore conflicting evidence.
+   - If NO conflict exists, do NOT include unsolicited boilerplate like "No conflicting evidence was found".
 
-7. INSUFFICIENT EVIDENCE & ABSTENTION:
-   - If the provided documents do not establish who removed an item, who personally operated a device, or which vehicle transported an object, state clearly:
-     "The available evidence does not establish this."
-   - Do NOT guess or pick the most likely suspect.
+6. IMAGE EVIDENCE GROUNDING:
+   - Only claim what the Vision Analysis Agent actually detected.
+   - Do not assume two objects or events are identical just because they appear related or appear in the same scene.
+   - Cross-reference image evidence with retrieved text evidence before drawing a combined conclusion.
 
-8. CONCISE, EVIDENCE-CALIBRATED STYLE:
-   - Simple factual questions: 1-3 sentences + human-readable citations.
-   - Avoid strong ungrounded words like "definitely", "guilty", "intended" unless explicitly stated in the text.
-   - When reviewed sources are consistent, phrase as: "No conflicting evidence was found among the reviewed sources."
+7. PHYSICAL OBJECTS VS DIGITAL IDENTIFIERS & PERSONS VS CREDENTIALS:
+   - A digital tag, transponder, or beacon moving does NOT prove the physical object moved (if maintenance logs show the physical asset remained stationary).
+   - Credential or badge usage does NOT prove the assigned individual was physically present (if forensic evidence indicates badge replay/spoofing).
+   - Access, equipment proximity, or ownership indicates association, NOT direct operation or responsibility.
 
-9. CITATIONS:
-   - Always include human-readable citations with file name and page number, e.g. [FileName, Page X].`.trim();
+8. CITATION INTEGRITY:
+   - Keep citations attached directly to the claims they support:
+     * For document pages: [FileName, Page X]
+     * For visual evidence: [FileName, Image Evidence]
+
+9. ANSWER STRUCTURE & CONCISENESS:
+   - For simple factual questions (e.g. "What is the route distance?", "What is the item count?"):
+     * Answer directly and concisely (1–3 sentences) with citations. Do NOT add unnecessary meta-analysis.
+   - For complex investigation questions (e.g. assessing proof, multi-source discrepancies, "Does this prove...?"):
+     * Structure clearly with:
+       - **Directly Established**
+       - **Reasonable Inferences**
+       - **Conflicting or Uncertain Evidence** (if applicable)
+       - **Final Conclusion**`.trim();
 
   if (!contextChunks || contextChunks.length === 0) {
     const userPrompt = `USER QUESTION: ${question}
@@ -81,10 +130,15 @@ Please advise that no document evidence is available to answer this question.`;
     .map((chunk, index) => {
       const sourceNum = index + 1;
       const fileName = chunk.fileName || 'Document';
-      const pageNum = chunk.pageNumber || 1;
+      const isImage = Boolean(
+        chunk.isImage ||
+        chunk.sourceType === 'image' ||
+        /\.(png|jpg|jpeg|webp)$/i.test(fileName)
+      );
+      const locationLabel = isImage ? 'Image Evidence (Visual Capture)' : `Page: ${chunk.pageNumber || 1}`;
       const score = chunk.similarityScore ? ` (Relevance: ${(chunk.similarityScore * 100).toFixed(1)}%)` : '';
 
-      return `[Source ${sourceNum}]: File: "${fileName}" | Page: ${pageNum}${score}
+      return `[Source ${sourceNum}]: File: "${fileName}" | ${locationLabel}${score}
 """
 ${chunk.chunkText}
 """`;
@@ -93,8 +147,7 @@ ${chunk.chunkText}
 
   const userPrompt = `DOCUMENT EVIDENCE:
 ${evidenceBlocks}
-${conflictBlock}
-
+${claimsBlock}${conflictBlock}
 USER QUESTION:
 ${question}
 
@@ -103,13 +156,13 @@ Provide a grounded, factual, evidence-calibrated answer based strictly on the do
   return { systemPrompt, userPrompt };
 };
 
-
-
 /**
  * Call RunPod Ollama Qwen model to generate a strictly grounded answer
  * @param {Object} params
  * @param {string} params.question - The user's prompt or question
  * @param {Array<Object>} params.contextChunks - Retrieved chunks from Qdrant Cloud
+ * @param {Array<Object>} [params.classifiedClaims] - Pre-classified claims from Evidence Agent
+ * @param {Object} [params.conflictReport] - Conflict detection and resolution report
  * @param {Array<Object>} [params.chatHistory] - Optional prior conversation messages
  * @param {number} [params.temperature=0.1] - Sampling temperature (low for factual grounding)
  * @returns {Promise<string>} Generated grounded response text
@@ -117,12 +170,12 @@ Provide a grounded, factual, evidence-calibrated answer based strictly on the do
 export const generateGroundedAnswer = async ({
   question,
   contextChunks = [],
+  classifiedClaims = [],
   conflictReport = null,
   chatHistory = [],
   temperature = 0.1,
 }) => {
-  const baseUrl = getOllamaBaseUrl();
-  const model = getOllamaLlmModel();
+  const model = getOllamaTextModel();
 
   if (!isOllamaConfigured()) {
     throw new Error(
@@ -133,11 +186,11 @@ export const generateGroundedAnswer = async ({
   const { systemPrompt, userPrompt } = buildGroundedPrompt({
     question,
     contextChunks,
+    classifiedClaims,
     conflictReport,
   });
 
-
-  // Prepare messages payload for Ollama /api/chat
+  // Prepare messages payload for centralized Ollama call
   const messages = [
     { role: 'system', content: systemPrompt },
     // Filter and sanitize recent chat history (keep last 6 turns for context continuity)
@@ -148,60 +201,18 @@ export const generateGroundedAnswer = async ({
     { role: 'user', content: userPrompt },
   ];
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout for LLM generation
-
   console.log(`\n🧠 [Qwen Service] Generating grounded answer with model: "${model}" on RunPod...`);
   console.log(`📄 [Qwen Service] Evidence passages provided: ${contextChunks.length}`);
 
   try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: false,
-        options: {
-          temperature,
-          num_ctx: 8192,
-        },
-      }),
-      signal: controller.signal,
+    const replyText = await callTextModel({
+      messages,
+      temperature,
     });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      if (response.status === 404 || errText.includes('not found') || errText.includes('try pulling')) {
-        throw new Error(
-          `Ollama model "${model}" was not found on your RunPod instance. Please connect to your RunPod terminal and run: "ollama pull ${model}".`
-        );
-      }
-      throw new Error(
-        `RunPod Ollama returned HTTP ${response.status}: ${errText || response.statusText}`
-      );
-    }
-
-    const data = await response.json();
-    const replyText = data.message?.content || data.response || '';
-
-    if (!replyText.trim()) {
-      throw new Error('RunPod Ollama returned an empty response.');
-    }
 
     console.log(`✅ [Qwen Service] Answer generated successfully (${replyText.length} characters).\n`);
     return replyText.trim();
   } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error(
-        `RunPod Ollama generation timed out after 90s. Ensure your RunPod GPU is active and has sufficient memory.`
-      );
-    }
     console.error(`❌ [Qwen Service] Error:`, error.message);
     throw error;
   }
@@ -212,3 +223,4 @@ export default {
   buildGroundedPrompt,
   getOllamaLlmModel,
 };
+

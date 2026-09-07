@@ -55,6 +55,12 @@
   flex-shrink: 0;
 }
 
+.doc-icon-badge.image-icon-badge {
+  background: rgba(236, 72, 153, 0.2);
+  border-color: rgba(244, 114, 182, 0.35);
+  color: #f472b6;
+}
+
 .modal-doc-title {
   font-size: 1rem;
   font-weight: 700;

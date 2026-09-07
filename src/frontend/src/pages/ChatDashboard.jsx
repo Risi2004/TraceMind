@@ -7,10 +7,12 @@ import { InvestigationPanel } from '../components/chat/InvestigationPanel';
 import { DocumentsView } from '../components/documents/DocumentsView';
 import { SettingsView } from '../components/settings/SettingsView';
 import { SourcePreviewModal } from '../components/chat/SourcePreviewModal';
+import { AgentFlowModal } from '../components/chat/AgentFlowModal';
 import { ProfileModal } from '../components/profile/ProfileModal';
 import { SignOutConfirmModal } from '../components/profile/SignOutConfirmModal';
 import { useAuth } from '../context/useAuth';
 import { documentsApi, ragApi } from '../services/api';
+
 
 
 
@@ -23,7 +25,8 @@ import {
   FileTextIcon,
   UploadCloudIcon,
   CheckCircleIcon,
-  AlertCircleIcon
+  AlertCircleIcon,
+  NetworkIcon
 } from '../components/common/Icons';
 import {
   MOCK_USER_PROFILE,
@@ -119,7 +122,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           const allReady =
             relevantDocs.length > 0 && relevantDocs.every((d) => d.status === 'ready');
 
-          // CASE 1: All documents successfully indexed in Qdrant Cloud!
+          // CASE 1: All documents successfully indexed in knowledge base!
           if (allReady) {
             clearInterval(intervalId);
             setVectorizationState((prev) => ({
@@ -127,7 +130,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'ready',
-              message: 'All documents vectorized & saved to Qdrant Cloud! Submit unlocked.',
+              message: 'All documents processed & indexed! Ready for questions.',
             }));
 
             setTimeout(() => {
@@ -145,7 +148,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'error',
-              message: failedDoc?.errorMessage || 'Vectorization processing failed.',
+              message: failedDoc?.errorMessage || 'Document processing failed.',
             }));
 
             setTimeout(() => {
@@ -160,9 +163,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             let stageMessage = 'Extracting text and structural pages...';
 
             if (simulatedProgress > 50 && simulatedProgress <= 75) {
-              stageMessage = 'Generating Nomic Embeddings on RunPod GPU...';
+              stageMessage = 'Generating semantic embeddings...';
             } else if (simulatedProgress > 75) {
-              stageMessage = 'Indexing vector points and metadata in Qdrant Cloud...';
+              stageMessage = 'Indexing document content and metadata...';
             }
 
             setVectorizationState((prev) => ({
@@ -227,6 +230,62 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   // Investigation panel state
   const [investigationOpen, setInvestigationOpen] = useState(true);
 
+  // Smart conversation title generator that extracts concise topic headings instead of full questions
+  const generateConversationTitle = (text) => {
+    if (!text || typeof text !== 'string') return 'Investigation Query';
+
+    let cleaned = text.trim();
+
+    // Remove surrounding quotes or markdown
+    cleaned = cleaned.replace(/^[*"`'“”#\s]+|[*"`'“”\s]+$/g, '').trim();
+
+    // Comprehensive question filler patterns
+    const fillerPatterns = [
+      /^(?:can\s+you\s+please\s+tell\s+me\s+about\s+the|can\s+you\s+please\s+tell\s+me\s+about|can\s+you\s+tell\s+me\s+about\s+the|can\s+you\s+tell\s+me\s+about|can\s+you\s+tell\s+me\s+the|can\s+you\s+tell\s+me|could\s+you\s+please\s+explain|could\s+you\s+explain|could\s+you\s+tell\s+me)\s*/i,
+      /^(?:please\s+tell\s+me\s+about|please\s+explain\s+to\s+me|please\s+explain|please\s+provide\s+details\s+on|please\s+provide|please\s+find)\s*/i,
+      /^(?:at\s+what\s+time\s+did\s+the|at\s+what\s+time\s+did|at\s+what\s+time|what\s+time\s+did\s+the|what\s+time\s+is\s+the|what\s+time\s+is)\s*/i,
+      /^(?:who\s+commanded\s+the|who\s+was\s+in\s+charge\s+of\s+the|who\s+was\s+the|who\s+is\s+the|who\s+are\s+the)\s*/i,
+      /^(?:what\s+is\s+the\s+purpose\s+of|what\s+is\s+the|what\s+are\s+the|what\s+were\s+the|what\s+did\s+the)\s*/i,
+      /^(?:how\s+did\s+the|how\s+does\s+the|how\s+can\s+we|how\s+to|why\s+did\s+the|why\s+does\s+the|why\s+is\s+there)\s*/i,
+      /^(?:tell\s+me\s+about\s+the|tell\s+me\s+about|tell\s+me|summarize\s+the|summarize|explain\s+the|explain|describe\s+the|describe)\s*/i,
+      /^(?:search\s+for\s+the|search\s+for|find\s+the|find\s+information\s+on|find\s+out\s+about|give\s+me\s+the|give\s+me)\s*/i,
+      /^(?:inquire\s+about|investigate\s+the|investigate|details\s+regarding|details\s+on)\s*/i,
+    ];
+
+    for (const pattern of fillerPatterns) {
+      cleaned = cleaned.replace(pattern, '').trim();
+    }
+
+    // Strip trailing punctuation
+    cleaned = cleaned.replace(/[?!.:;,—–-]+$/g, '').trim();
+
+    // If too short, fallback to original text without punctuation
+    if (cleaned.length < 3) {
+      cleaned = text.replace(/[?!.:;,—–-]+$/g, '').trim();
+    }
+
+    if (!cleaned) return 'Investigation Query';
+
+    // Capitalize words into Title Case
+    const words = cleaned.split(/\s+/).slice(0, 6);
+    const minorWords = new Set(['a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'by', 'with']);
+    const titleCased = words
+      .map((word, idx) => {
+        const lower = word.toLowerCase();
+        if (idx > 0 && minorWords.has(lower)) {
+          return lower;
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(' ');
+
+    if (titleCased.length > 32) {
+      return `${titleCased.slice(0, 30).trim()}...`;
+    }
+
+    return titleCased;
+  };
+
   // Chat conversation state — Clean initial state (no pre-selected document scope)
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -235,11 +294,25 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   const [investigationStepText, setInvestigationStepText] = useState('Searching Documents...');
   const [activeInvestigationSteps, setActiveInvestigationSteps] = useState([]);
 
-  // Persistent chat history loaded from localStorage
+  // Persistent chat history loaded from localStorage (with auto-sanitization for headings & timestamps)
   const [chatHistory, setChatHistory] = useState(() => {
     try {
       const saved = localStorage.getItem(`tracemind_chat_history_${authUser?._id || 'guest'}`);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item, idx) => ({
+          ...item,
+          title: item.title
+            ? (item.title.endsWith('?') || /^(?:At what|Who commanded|Can you tell|What is|Why did)/i.test(item.title)
+                ? generateConversationTitle(item.title)
+                : item.title)
+            : 'Investigation Query',
+          createdAt: item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+          lastUpdated: item.lastUpdated || item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+        }));
+      }
+      return [];
     } catch {
       return [];
     }
@@ -263,7 +336,18 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setChatHistory(parsed);
+          setChatHistory(
+            parsed.map((item, idx) => ({
+              ...item,
+              title: item.title
+                ? (item.title.endsWith('?') || /^(?:At what|Who commanded|Can you tell|What is|Why did)/i.test(item.title)
+                    ? generateConversationTitle(item.title)
+                    : item.title)
+                : 'Investigation Query',
+              createdAt: item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+              lastUpdated: item.lastUpdated || item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+            }))
+          );
         }
       } else {
         setChatHistory([]);
@@ -275,6 +359,19 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
   // Active Source Modal Preview
   const [selectedSource, setSelectedSource] = useState(null);
+
+  // 3D Agent Flow Modal State & Live Flow Tracking
+  const [agentFlowModalOpen, setAgentFlowModalOpen] = useState(false);
+  const [selectedFlowData, setSelectedFlowData] = useState(null);
+  const [liveAgentFlow, setLiveAgentFlow] = useState({
+    isLive: false,
+    events: [],
+    searchRounds: 1,
+    sourcesReviewed: 0,
+    conflictsDetected: 0,
+    activeAgent: null,
+  });
+
 
   // Handle setting changes
   const handleUpdateSetting = (key, value) => {
@@ -365,6 +462,23 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setActiveInvestigationSteps(historyItem.investigationSteps || []);
   };
 
+  // Rename an existing conversation in history
+  const handleRenameHistory = (sessionId, newTitle) => {
+    if (!sessionId || !newTitle) return;
+    setChatHistory((prev) =>
+      prev.map((item) => (item.id === sessionId ? { ...item, title: newTitle } : item))
+    );
+  };
+
+  // Delete a conversation from history
+  const handleDeleteHistory = (sessionId) => {
+    if (!sessionId) return;
+    setChatHistory((prev) => prev.filter((item) => item.id !== sessionId));
+    if (currentSessionId === sessionId) {
+      handleNewChat();
+    }
+  };
+
   // Document Management handlers (Cloudflare R2 + MongoDB)
   const handleDeleteDocument = async (docId) => {
     try {
@@ -433,7 +547,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       stage: 'uploading',
       filename: displayFilename,
       count: files.length,
-      message: 'Uploading to Cloudflare R2 storage (0%)...',
+      message: 'Uploading to secure document storage (0%)...',
     });
 
     try {
@@ -444,8 +558,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           progress: uploadScaledProgress,
           stage: 'uploading',
           message: percent === 100
-            ? 'Stored in Cloudflare R2! Extracting text and pages...'
-            : `Uploading to Cloudflare R2 (${percent}%)...`,
+            ? 'Stored securely! Extracting text and pages...'
+            : `Uploading to document storage (${percent}%)...`,
         }));
       });
 
@@ -536,16 +650,137 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Dynamic Multi-step investigation text updates
-    setInvestigationStepText('Computing Nomic Dense Vector Embeddings on RunPod GPU...');
-    
+    // Initial Live Agent Progression: Planner Agent
+    const initialLiveEvents = [
+      {
+        agent: 'planner',
+        event: 'PLANNING_STARTED',
+        status: 'running',
+        round: 1,
+        message: 'Formulating multi-hop search strategy and extracting key query entities',
+        timestamp: new Date().toISOString(),
+        metadata: { searchRationale: 'Deconstructing question for dense vector retrieval' }
+      }
+    ];
+
+    setInvestigationStepText('Formulating search strategy with Planner Agent...');
+    setLiveAgentFlow({
+      isLive: true,
+      events: initialLiveEvents,
+      searchRounds: 1,
+      sourcesReviewed: 0,
+      conflictsDetected: 0,
+      activeAgent: 'planner'
+    });
+
     const stepTimer1 = setTimeout(() => {
-      setInvestigationStepText('Searching Qdrant Cloud Collection for Grounded Evidence...');
+      setInvestigationStepText('Executing semantic search across knowledge base...');
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        activeAgent: 'retrieval',
+        sourcesReviewed: 6,
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_IN_PROGRESS',
+            status: 'running',
+            round: 1,
+            message: 'Searching document knowledge base for relevant passages',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 6 }
+          }
+        ]
+      }));
     }, 800);
 
     const stepTimer2 = setTimeout(() => {
-      setInvestigationStepText('Synthesizing Grounded Answer with Qwen LLM on RunPod...');
-    }, 2200);
+      setInvestigationStepText('Extracting verified claims with Evidence & Conflict Agents...');
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        sourcesReviewed: 12,
+        activeAgent: 'evidence',
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_COMPLETED',
+            status: 'completed',
+            round: 1,
+            message: 'Retrieved 12 relevant document passages from knowledge base',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 12 }
+          },
+          {
+            agent: 'evidence',
+            event: 'EVIDENCE_ANALYZED',
+            status: 'completed',
+            round: 1,
+            message: 'Extracted grounded factual statements and cross-referenced claims',
+            timestamp: new Date().toISOString(),
+            metadata: { factsExtracted: 8, sourcesFound: 12 }
+          },
+          {
+            agent: 'sufficiency',
+            event: 'SUFFICIENCY_EVALUATION',
+            status: 'running',
+            round: 1,
+            message: 'Evaluating evidence completeness and inspecting for source discrepancies',
+            timestamp: new Date().toISOString(),
+            metadata: { isSufficient: true, confidenceScore: 96 }
+          }
+        ]
+      }));
+    }, 1900);
+
+    const stepTimer3 = setTimeout(() => {
+      setInvestigationStepText('Synthesizing verified, citation-grounded response...');
+      setLiveAgentFlow(prev => ({
+        ...prev,
+        isLive: true,
+        activeAgent: 'answer',
+        events: [
+          { ...initialLiveEvents[0], status: 'completed' },
+          {
+            agent: 'retrieval',
+            event: 'SEARCH_COMPLETED',
+            status: 'completed',
+            round: 1,
+            message: 'Retrieved 12 relevant document passages from knowledge base',
+            timestamp: new Date().toISOString(),
+            metadata: { sourcesFound: 12 }
+          },
+          {
+            agent: 'evidence',
+            event: 'EVIDENCE_ANALYZED',
+            status: 'completed',
+            round: 1,
+            message: 'Extracted grounded factual statements and cross-referenced claims',
+            timestamp: new Date().toISOString(),
+            metadata: { factsExtracted: 8, sourcesFound: 12 }
+          },
+          {
+            agent: 'sufficiency',
+            event: 'SUFFICIENCY_VERIFIED',
+            status: 'completed',
+            round: 1,
+            message: 'Evidence sufficiency verified with high confidence',
+            timestamp: new Date().toISOString(),
+            metadata: { isSufficient: true, confidenceScore: 98 }
+          },
+          {
+            agent: 'answer',
+            event: 'ANSWER_SYNTHESIS',
+            status: 'running',
+            round: 1,
+            message: 'Synthesizing verified, citation-grounded response',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }));
+    }, 3200);
 
     try {
       // Build conversation history format for API
@@ -562,6 +797,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
 
       // Set real live ADK investigation steps into the right-hand InvestigationPanel
       const returnedSteps = result.investigationSteps || [];
@@ -569,11 +805,29 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         setActiveInvestigationSteps(returnedSteps);
       }
 
+      const finalEvents = (result.executionEvents && result.executionEvents.length > 0)
+        ? result.executionEvents.map(e => ({ ...e, status: 'completed' }))
+        : [];
+
+      const finalFlowData = {
+        isLive: false,
+        events: finalEvents,
+        searchRounds: result.roundsCount || result.evaluationMetrics?.roundsCount || 1,
+        sourcesReviewed: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
+        conflictsDetected: result.evaluationMetrics?.conflictsCount || (result.conflictDetected ? 1 : 0),
+        investigationSteps: returnedSteps,
+        evaluationMetrics: result.evaluationMetrics || {},
+      };
+
+      setLiveAgentFlow(finalFlowData);
+      setSelectedFlowData(finalFlowData);
+
       const aiReply = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         content: result.answer,
+        investigationFlow: finalFlowData,
         sources: (result.sources || []).map((src, idx) => ({
           id: src.pointId || `src-${idx + 1}`,
           documentTitle: src.fileName || 'Document',
@@ -585,15 +839,16 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           fullText: src.fullText,
         })),
         reasoningSummary: {
-          strategy: `Google ADK Multi-Hop (${result.roundsCount || 1} Round${(result.roundsCount || 1) > 1 ? 's' : ''}) + Grounded Qwen`,
+          strategy: `Multi-Agent Deep Investigation (${result.roundsCount || 1} Round${(result.roundsCount || 1) > 1 ? 's' : ''})`,
           evidenceFound: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
           conflictDetected: Boolean(result.conflictDetected),
           conflictAssessment: result.conflictReport?.assessment,
           confidence: result.confidence || 94,
           roundsCount: result.roundsCount || 1,
-          model: result.model || 'qwen3:14b',
+          model: 'TraceMind AI Engine',
         }
       };
+
 
       setMessages(prev => [...prev, aiReply]);
       setIsLoading(false);
@@ -616,11 +871,12 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             };
             return updated;
           } else {
-            // Prepend new conversation session
+            // Prepend new conversation session with clean synthesized topic heading
+            const generatedTitle = generateConversationTitle(userText);
             const newSession = {
               id: activeSessionId,
-              title: userText.length > 36 ? `${userText.slice(0, 36)}...` : userText,
-              date: 'Just now',
+              title: generatedTitle,
+              date: new Date().toISOString(),
               scope: scopeToUse,
               messages: updatedMessages,
               investigationSteps: returnedSteps,
@@ -641,10 +897,10 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         id: `ai-err-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        content: `⚠️ **Unable to generate answer:** ${err.message || 'An error occurred while communicating with the RAG pipeline or RunPod Ollama server.'}`,
+        content: `⚠️ **Unable to generate answer:** ${err.message || 'An error occurred while connecting to the reasoning service. Please try again.'}`,
         sources: [],
         reasoningSummary: {
-          strategy: 'RAG Error Handler',
+          strategy: 'Error Handler',
           evidenceFound: 0,
           conflictDetected: true,
           confidence: 0,
@@ -671,8 +927,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         <div className="chat-drop-overlay">
           <div className="drop-overlay-card">
             <UploadCloudIcon size={48} className="drop-icon-animated" />
-            <h3 className="drop-title">Drop files to upload to Cloudflare R2</h3>
-            <p className="drop-subtitle">PDF, DOCX, TXT, Markdown, or ZIP archives (up to 300MB)</p>
+            <h3 className="drop-title">Drop files to upload documents</h3>
+            <p className="drop-subtitle">PDF, DOCX, TXT, Markdown, PNG, JPG, or ZIP archives (up to 300MB)</p>
           </div>
         </div>
       )}
@@ -687,6 +943,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         onSelectView={handleSelectView}
         onNewChat={handleNewChat}
         onSelectHistory={handleSelectHistory}
+        onRenameHistory={handleRenameHistory}
+        onDeleteHistory={handleDeleteHistory}
         onNavigate={onNavigate}
         user={currentUser}
         onOpenProfile={() => setProfileModalOpen(true)}
@@ -726,7 +984,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   <span className="chat-active-title">Document Repository</span>
                   <span className="chat-subtitle-badge">
                     <FileTextIcon size={12} />
-                    <span>{documents.length} Files in Cloudflare R2</span>
+                    <span>{documents.length} Uploaded Files</span>
                   </span>
                 </>
               )}
@@ -738,7 +996,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   </span>
                   <span className="chat-subtitle-badge">
                     <SparklesIcon size={12} />
-                    <span>Cloudflare R2 Storage</span>
+                    <span>Document Vault</span>
                   </span>
                 </>
               )}
@@ -790,6 +1048,27 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                     <span className="hidden-sm">Investigation</span>
                   </button>
                 )}
+
+                {/* 3D Agent Flow Button */}
+                <button
+                  type="button"
+                  className={`btn-agent-flow-topbar ${isLoading ? 'live-pulsing' : ''}`}
+                  onClick={() => {
+                    if (isLoading) {
+                      setSelectedFlowData(liveAgentFlow);
+                    } else if (!selectedFlowData && messages.length > 0) {
+                      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+                      if (lastAssistant?.investigationFlow) {
+                        setSelectedFlowData(lastAssistant.investigationFlow);
+                      }
+                    }
+                    setAgentFlowModalOpen(true);
+                  }}
+                  title="View Multi-Agent Execution Flow"
+                >
+                  <NetworkIcon size={16} />
+                  <span className="hidden-xs">{isLoading ? 'Live Agent Flow' : 'Agent Flow'}</span>
+                </button>
               </>
             )}
 
@@ -835,10 +1114,10 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   <div className="vector-title-row">
                     <span className="vector-title">
                       {vectorizationState.stage === 'ready'
-                        ? 'Vectorization Complete'
+                        ? 'Processing Complete'
                         : vectorizationState.stage === 'error'
-                        ? 'Vectorization Failed'
-                        : `Vectorizing: ${vectorizationState.filename || 'Documents'}`}
+                        ? 'Processing Failed'
+                        : `Processing: ${vectorizationState.filename || 'Documents'}`}
                     </span>
                     <span className="vector-percent-tag">
                       {Math.round(vectorizationState.progress)}%
@@ -851,7 +1130,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               <div className="vector-stage-right">
                 <span className="vector-engine-tag">
                   <SparklesIcon size={12} />
-                  <span>Nomic • Qdrant Cloud</span>
+                  <span>Semantic Knowledge Base</span>
                 </span>
               </div>
             </div>
@@ -899,6 +1178,22 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   onSelectSuggestion={(text, scope) => handleSendMessage(text, scope)}
                   onOpenSourcePreview={setSelectedSource}
                   onOpenInvestigation={() => setInvestigationOpen(true)}
+                  onOpenAgentFlow={(msg) => {
+                    if (msg?.isLive || isLoading) {
+                      setSelectedFlowData(liveAgentFlow);
+                    } else if (msg?.investigationFlow) {
+                      setSelectedFlowData(msg.investigationFlow);
+                    } else {
+                      setSelectedFlowData({
+                        events: [],
+                        searchRounds: msg?.reasoningSummary?.roundsCount || 1,
+                        sourcesReviewed: msg?.sources?.length || 0,
+                        conflictsDetected: msg?.reasoningSummary?.conflictDetected ? 1 : 0,
+                        investigationSteps: activeInvestigationSteps,
+                      });
+                    }
+                    setAgentFlowModalOpen(true);
+                  }}
                   showCitations={settings.showSourceCitations}
                   showConfidence={settings.showEvidenceConfidence}
                 />
@@ -935,14 +1230,32 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           isOpen={investigationOpen}
           onClose={() => setInvestigationOpen(false)}
           isInvestigating={isLoading}
+          onOpenAgentFlow={() => {
+            setSelectedFlowData(isLoading ? liveAgentFlow : (selectedFlowData || {
+              events: [],
+              searchRounds: 1,
+              sourcesReviewed: 0,
+              conflictsDetected: 0,
+              investigationSteps: activeInvestigationSteps
+            }));
+            setAgentFlowModalOpen(true);
+          }}
         />
       )}
 
-      {/* 4. Source Preview Modal / Drawer */}
+      {/* 4. Interactive 3D Agent Execution Flow Modal */}
+      <AgentFlowModal
+        isOpen={agentFlowModalOpen}
+        onClose={() => setAgentFlowModalOpen(false)}
+        flowData={isLoading && liveAgentFlow.isLive ? liveAgentFlow : (selectedFlowData || liveAgentFlow)}
+      />
+
+      {/* 5. Source Preview Modal / Drawer */}
       <SourcePreviewModal
         source={selectedSource}
         onClose={() => setSelectedSource(null)}
       />
+
 
       {/* 5. Profile Modal Dialog */}
       <ProfileModal
