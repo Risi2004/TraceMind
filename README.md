@@ -501,6 +501,6 @@ This project is licensed under the **ISC License**. Developed for the **SLIIT CO
 ---
 
 <p align="center">
-  <b>Built with ❤️ by the Team HireMind</b><br>
+  <b>Built with ❤️ by the Team HyperNova</b><br>
   <i>Empowering Grounded, Calibrated Multi-Agent Document Intelligence</i>
 </p>
