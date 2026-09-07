@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   SendIcon,
-  PaperclipIcon,
+  PlusIcon,
   SparklesIcon,
   AlertCircleIcon,
   FileTextIcon,
   ImageIcon,
   XIcon,
-  UploadCloudIcon
+  UploadCloudIcon,
+  FolderIcon
 } from '../common/Icons';
 import './ChatInput.css';
 
@@ -29,6 +30,15 @@ const isImageFile = (file) => {
   );
 };
 
+const isZipFile = (file) => {
+  if (!file) return false;
+  return (
+    file.type === 'application/zip' ||
+    file.type === 'application/x-zip-compressed' ||
+    /\.zip$/i.test(file.name)
+  );
+};
+
 export const ChatInput = ({
   onSendMessage,
   onUploadFiles,
@@ -40,6 +50,7 @@ export const ChatInput = ({
   activeScopeName = 'All Documents',
   activeScopeDocs = [],
   onRemoveScopeDoc,
+  onClearScope,
   onTriggerScopeSelect
 }) => {
   const [text, setText] = useState('');
@@ -47,8 +58,60 @@ export const ChatInput = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const [sizeError, setSizeError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showAllScopeChips, setShowAllScopeChips] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Group activeScopeDocs by parent archive (ZIP) or standalone files to prevent flooding the chat window
+  const scopeGroups = (() => {
+    if (!activeScopeDocs || activeScopeDocs.length === 0) return [];
+
+    const archives = new Map();
+    const standalones = [];
+
+    for (const doc of activeScopeDocs) {
+      const zipName =
+        doc.parentZipName ||
+        (doc.metadata && (doc.metadata.parentZip || doc.metadata.parentZipName));
+      if (zipName) {
+        if (!archives.has(zipName)) {
+          archives.set(zipName, []);
+        }
+        archives.get(zipName).push(doc);
+      } else {
+        standalones.push(doc);
+      }
+    }
+
+    const groups = [];
+    for (const [zipName, docs] of archives.entries()) {
+      groups.push({
+        type: 'archive',
+        key: `zip_${zipName}`,
+        name: zipName,
+        count: docs.length,
+        docIds: docs.map((d) => d._id || d.id),
+      });
+    }
+
+    for (const doc of standalones) {
+      groups.push({
+        type: 'document',
+        key: `doc_${doc._id || doc.id}`,
+        name: doc.title || doc.filename || 'Document',
+        docId: doc._id || doc.id,
+        isImage: doc.fileType === 'IMAGE' || isImageFile(doc),
+      });
+    }
+
+    return groups;
+  })();
+
+  const MAX_VISIBLE_SCOPE_GROUPS = 3;
+  const visibleScopeGroups = showAllScopeChips
+    ? scopeGroups
+    : scopeGroups.slice(0, MAX_VISIBLE_SCOPE_GROUPS);
+  const hiddenScopeGroupsCount = Math.max(0, scopeGroups.length - MAX_VISIBLE_SCOPE_GROUPS);
 
   // Auto-resize textarea height
   useEffect(() => {
@@ -290,49 +353,97 @@ export const ChatInput = ({
       onDrop={handleDrop}
     >
       <div className="container chat-input-inner">
-        {/* Active Multi-Document Scope Chip Tray */}
-        {activeScopeDocs && activeScopeDocs.length > 0 && (
+        {/* Active Multi-Document Scope Chip Tray (Compact, Archive-Aware) */}
+        {activeScopeDocs && activeScopeDocs.length > 0 && scopeGroups.length > 0 && (
           <div className="active-scope-tray" aria-label="Active Search Scope">
-            <div className="active-scope-tray-header">
-              <span className="scope-tray-label">Active Scopes ({activeScopeDocs.length}):</span>
+            <div className="active-scope-tray-left">
+              <span className="scope-tray-label">
+                Scope ({activeScopeDocs.length}):
+              </span>
+              <div className="active-scope-chips-list">
+                {visibleScopeGroups.map((group) => {
+                  if (group.type === 'archive') {
+                    return (
+                      <div
+                        key={group.key}
+                        className="active-scope-chip is-archive-scope"
+                        title={`Archive: ${group.name} (${group.count} files)`}
+                      >
+                        <FolderIcon size={12} className="chip-doc-icon text-purple" />
+                        <span className="chip-doc-name">{group.name}</span>
+                        <span className="scope-archive-badge">{group.count} files</span>
+                        {onRemoveScopeDoc && (
+                          <button
+                            type="button"
+                            className="chip-remove-btn"
+                            onClick={() => onRemoveScopeDoc(group.docIds)}
+                            title={`Remove archive "${group.name}" from search scope`}
+                            aria-label={`Remove archive "${group.name}" from search scope`}
+                          >
+                            <XIcon size={11} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={group.key} className="active-scope-chip" title={group.name}>
+                      {group.isImage ? (
+                        <ImageIcon size={12} className="chip-doc-icon text-cyan" />
+                      ) : (
+                        <FileTextIcon size={12} className="chip-doc-icon" />
+                      )}
+                      <span className="chip-doc-name">{group.name}</span>
+                      {onRemoveScopeDoc && (
+                        <button
+                          type="button"
+                          className="chip-remove-btn"
+                          onClick={() => onRemoveScopeDoc(group.docId)}
+                          title={`Remove "${group.name}" from search scope`}
+                          aria-label={`Remove "${group.name}" from search scope`}
+                        >
+                          <XIcon size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {hiddenScopeGroupsCount > 0 && (
+                  <button
+                    type="button"
+                    className="active-scope-chip is-more-pill"
+                    onClick={() => setShowAllScopeChips((prev) => !prev)}
+                    title={showAllScopeChips ? 'Show fewer items' : `Show ${hiddenScopeGroupsCount} more`}
+                  >
+                    {showAllScopeChips ? 'Show Less' : `+${hiddenScopeGroupsCount} more`}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="active-scope-tray-actions">
               {onTriggerScopeSelect && (
                 <button
                   type="button"
                   className="btn-add-more-scope"
                   onClick={onTriggerScopeSelect}
-                  title="Add more documents to search scope"
+                  title="Change search scope"
                 >
-                  + Add / Change Scope
+                  Change
                 </button>
               )}
-            </div>
-            <div className="active-scope-chips-list">
-              {activeScopeDocs.map((doc) => {
-                const docId = doc._id || doc.id;
-                const title = doc.title || doc.filename || 'Document';
-                const isImageDoc = doc.fileType === 'IMAGE' || isImageFile(doc);
-                return (
-                  <div key={docId} className="active-scope-chip" title={doc.filename || title}>
-                    {isImageDoc ? (
-                      <ImageIcon size={12} className="chip-doc-icon text-cyan" />
-                    ) : (
-                      <FileTextIcon size={12} className="chip-doc-icon" />
-                    )}
-                    <span className="chip-doc-name">{title}</span>
-                    {onRemoveScopeDoc && (
-                      <button
-                        type="button"
-                        className="chip-remove-btn"
-                        onClick={() => onRemoveScopeDoc(docId)}
-                        title={`Remove "${title}" from search scope`}
-                        aria-label={`Remove ${title} from search scope`}
-                      >
-                        <XIcon size={11} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+              {onClearScope && (
+                <button
+                  type="button"
+                  className="btn-clear-scope"
+                  onClick={onClearScope}
+                  title="Clear scope and search across all documents"
+                >
+                  Reset All
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -375,10 +486,13 @@ export const ChatInput = ({
 
             <div className="staged-files-list">
               {stagedFiles.map((file, idx) => {
-                const isImg = isImageFile(file);
+                const isZip = isZipFile(file);
+                const isImg = !isZip && isImageFile(file);
                 return (
-                  <div key={`${file.name}_${idx}`} className={`staged-file-chip ${isImg ? 'is-image-chip' : ''}`}>
-                    {isImg ? (
+                  <div key={`${file.name}_${idx}`} className={`staged-file-chip ${isZip ? 'is-zip-chip' : isImg ? 'is-image-chip' : ''}`}>
+                    {isZip ? (
+                      <FolderIcon size={13} className="staged-icon text-cyan" />
+                    ) : isImg ? (
                       <ImageIcon size={13} className="staged-icon text-cyan" />
                     ) : (
                       <FileTextIcon size={13} className="staged-icon" />
@@ -420,6 +534,27 @@ export const ChatInput = ({
           onSubmit={handleSubmit}
           onPaste={handlePaste}
         >
+          {/* Upload Button (+ icon on the left) */}
+          <button
+            type="button"
+            className={`btn-attach-left ${isUploading || isVectorizing ? 'is-uploading' : ''} ${
+              stagedFiles.length > 0 ? 'has-staged' : ''
+            }`}
+            onClick={() => !isUploading && !isVectorizing && fileInputRef.current?.click()}
+            title={
+              isUploading || isVectorizing
+                ? 'Vectorization in progress...'
+                : 'Upload documents or images (PDF, DOCX, TXT, MD, PNG, JPG, WEBP, ZIP up to 300MB)'
+            }
+            aria-label="Upload documents and images"
+            disabled={disabled || isUploading || isVectorizing}
+          >
+            <PlusIcon size={18} />
+            {stagedFiles.length > 0 && (
+              <span className="attach-count-badge">{stagedFiles.length}</span>
+            )}
+          </button>
+
           <textarea
             ref={textareaRef}
             rows={1}
@@ -442,26 +577,6 @@ export const ChatInput = ({
           />
 
           <div className="chat-form-actions">
-            <button
-              type="button"
-              className={`btn-attach ${isUploading || isVectorizing ? 'is-uploading' : ''} ${
-                stagedFiles.length > 0 ? 'has-staged' : ''
-              }`}
-              onClick={() => !isUploading && !isVectorizing && fileInputRef.current?.click()}
-              title={
-                isUploading || isVectorizing
-                  ? 'Vectorization in progress...'
-                  : 'Attach documents or images (PDF, DOCX, TXT, MD, PNG, JPG, WEBP, ZIP up to 300MB)'
-              }
-              aria-label="Attach documents and images"
-              disabled={disabled || isUploading || isVectorizing}
-            >
-              <PaperclipIcon size={18} />
-              {stagedFiles.length > 0 && (
-                <span className="attach-count-badge">{stagedFiles.length}</span>
-              )}
-            </button>
-
             {/* Submit Button with Hover Tooltip when Blocked */}
             <div
               className="submit-btn-wrapper"

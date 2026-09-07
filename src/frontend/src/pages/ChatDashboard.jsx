@@ -26,11 +26,12 @@ import {
   UploadCloudIcon,
   CheckCircleIcon,
   AlertCircleIcon,
-  NetworkIcon
+  NetworkIcon,
+  FolderIcon,
+  CloseIcon
 } from '../components/common/Icons';
 import {
-  MOCK_USER_PROFILE,
-  MOCK_COLLECTIONS
+  MOCK_USER_PROFILE
 } from '../mock/chatMockData';
 import './ChatDashboard.css';
 
@@ -99,7 +100,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   }, []);
 
   // Poll backend while documents are being vectorized and saved into Qdrant Cloud
-  const pollVectorizationStatus = useCallback((docIds = []) => {
+  const pollVectorizationStatus = useCallback((docIds = [], options = {}) => {
+    const { isZip = false, archiveSummary = null } = options;
     let attempts = 0;
     const maxAttempts = 80; // 80 * 1500ms = 2 minutes timeout
     let simulatedProgress = 35;
@@ -116,11 +118,15 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             : res.documents;
 
           const anyProcessing = relevantDocs.some(
-            (d) => d.status === 'processing' || d.status === 'uploaded'
+            (d) => d.status === 'processing' || d.status === 'uploaded' || d.status === 'analyzing'
           );
           const anyFailed = relevantDocs.some((d) => d.status === 'failed');
           const allReady =
             relevantDocs.length > 0 && relevantDocs.every((d) => d.status === 'ready');
+
+          const readyCount = relevantDocs.filter((d) => d.status === 'ready').length;
+          const analyzingCount = relevantDocs.filter((d) => d.status === 'analyzing').length;
+          const totalCount = relevantDocs.length;
 
           // CASE 1: All documents successfully indexed in knowledge base!
           if (allReady) {
@@ -130,8 +136,21 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'ready',
-              message: 'All documents processed & indexed! Ready for questions.',
+              message: isZip
+                ? `Completed! Archive "${archiveSummary?.archive || 'ZIP'}" (${totalCount} files) fully indexed.`
+                : 'Completed! All documents processed & indexed! Ready for questions.',
             }));
+
+            if (isZip && archiveSummary) {
+              setArchiveNotification({
+                archive: archiveSummary.archive,
+                totalFiles: archiveSummary.totalFiles || totalCount,
+                processed: totalCount,
+                skipped: archiveSummary.skipped || 0,
+                failed: archiveSummary.failed || 0,
+                files: relevantDocs,
+              });
+            }
 
             setTimeout(() => {
               setVectorizationState((prev) => ({ ...prev, active: false }));
@@ -151,21 +170,42 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               message: failedDoc?.errorMessage || 'Document processing failed.',
             }));
 
+            if (isZip && archiveSummary) {
+              setArchiveNotification({
+                archive: archiveSummary.archive,
+                totalFiles: archiveSummary.totalFiles || totalCount,
+                processed: readyCount,
+                skipped: archiveSummary.skipped || 0,
+                failed: relevantDocs.filter((d) => d.status === 'failed').length,
+                files: relevantDocs,
+              });
+            }
+
             setTimeout(() => {
               setVectorizationState((prev) => ({ ...prev, active: false }));
             }, 6000);
             return;
           }
 
-          // CASE 3: In progress - advance simulated progress smoothly
+          // CASE 3: In progress - advance simulated progress smoothly with specific ZIP stages
           if (anyProcessing) {
             simulatedProgress = Math.min(95, simulatedProgress + 4);
-            let stageMessage = 'Extracting text and structural pages...';
+            let stageMessage = isZip
+              ? `Processing ${readyCount}/${totalCount}... Extracting documents`
+              : 'Extracting text and structural pages...';
 
-            if (simulatedProgress > 50 && simulatedProgress <= 75) {
-              stageMessage = 'Generating semantic embeddings...';
+            if (analyzingCount > 0) {
+              stageMessage = isZip
+                ? `Analyzing images with Qwen3-VL (${readyCount}/${totalCount} ready)...`
+                : 'Analyzing visual evidence with Vision Agent...';
+            } else if (simulatedProgress > 50 && simulatedProgress <= 75) {
+              stageMessage = isZip
+                ? `Generating embeddings (${readyCount}/${totalCount} ready)...`
+                : 'Generating semantic embeddings...';
             } else if (simulatedProgress > 75) {
-              stageMessage = 'Indexing document content and metadata...';
+              stageMessage = isZip
+                ? `Indexing evidence into Qdrant Cloud (${readyCount}/${totalCount} ready)...`
+                : 'Indexing document content and metadata...';
             }
 
             setVectorizationState((prev) => ({
@@ -415,8 +455,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       }
       return `${currentScope.length} Active Documents`;
     }
-    const col = MOCK_COLLECTIONS.find((c) => c.id === currentScope);
-    if (col) return col.name;
+
     const doc = documents.find((d) => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Target Document';
     return 'Target Document';
@@ -432,12 +471,20 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     return doc ? [doc] : [];
   };
 
-  // Remove individual document from active conversation scope
-  const handleRemoveScopeDoc = (docIdToRemove) => {
-    if (Array.isArray(currentScope)) {
-      const next = currentScope.filter((id) => id !== docIdToRemove);
+  // Remove document(s) from active conversation scope
+  const handleRemoveScopeDoc = (docIdOrIdsToRemove) => {
+    if (Array.isArray(docIdOrIdsToRemove)) {
+      const set = new Set(docIdOrIdsToRemove);
+      if (Array.isArray(currentScope)) {
+        const next = currentScope.filter((id) => !set.has(id));
+        setCurrentScope(next.length === 0 ? null : next.length === 1 ? next[0] : next);
+      } else if (set.has(currentScope)) {
+        setCurrentScope(null);
+      }
+    } else if (Array.isArray(currentScope)) {
+      const next = currentScope.filter((id) => id !== docIdOrIdsToRemove);
       setCurrentScope(next.length === 0 ? null : next.length === 1 ? next[0] : next);
-    } else if (currentScope === docIdToRemove) {
+    } else if (currentScope === docIdOrIdsToRemove) {
       setCurrentScope(null);
     }
   };
@@ -493,6 +540,18 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }
   };
 
+  const handleDeleteAllDocuments = async () => {
+    try {
+      const res = await documentsApi.deleteAll();
+      setDocuments([]);
+      setCurrentScope(null);
+      return res;
+    } catch (err) {
+      console.error('Delete all documents failed:', err);
+      throw err;
+    }
+  };
+
   const handleViewDocument = async (docId) => {
     try {
       const response = await documentsApi.getViewUrl(docId);
@@ -538,6 +597,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       return;
     }
 
+    const isZip = files.some((f) => (f.name || '').toLowerCase().endsWith('.zip'));
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
@@ -547,7 +607,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       stage: 'uploading',
       filename: displayFilename,
       count: files.length,
-      message: 'Uploading to secure document storage (0%)...',
+      message: isZip
+        ? 'Uploading ZIP archive... Validating files & path security...'
+        : 'Uploading to secure document storage (0%)...',
     });
 
     try {
@@ -558,7 +620,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           progress: uploadScaledProgress,
           stage: 'uploading',
           message: percent === 100
-            ? 'Stored securely! Extracting text and pages...'
+            ? (isZip ? 'Extracting archive & scanning files...' : 'Stored securely! Extracting text and pages...')
             : `Uploading to document storage (${percent}%)...`,
         }));
       });
@@ -577,16 +639,17 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         await refreshUserDocuments();
       }
 
-
       setVectorizationState(prev => ({
         ...prev,
         progress: 35,
         stage: 'processing',
-        message: 'Extracting text (PDF/DOCX/TXT/MD)...',
+        message: isZip
+          ? `Processing 1/${uploadedDocIds.length || 1}... Extracting archive files`
+          : 'Extracting text (PDF/DOCX/TXT/MD)...',
       }));
 
       // Start live polling until RunPod embeddings are computed and saved in Qdrant Cloud
-      pollVectorizationStatus(uploadedDocIds);
+      pollVectorizationStatus(uploadedDocIds, { isZip, archiveSummary: result });
 
     } catch (err) {
       console.error('Upload failed:', err);
@@ -1152,6 +1215,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             isLoading={isLoadingDocs}
             error={docsError}
             onDeleteDocument={handleDeleteDocument}
+            onDeleteAllDocuments={handleDeleteAllDocuments}
             onSelectDocumentForChat={handleSelectDocumentForChat}
             onViewDocument={handleViewDocument}
           />
@@ -1215,6 +1279,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               activeScopeName={getActiveScopeName()}
               activeScopeDocs={getActiveScopeDocs()}
               onRemoveScopeDoc={handleRemoveScopeDoc}
+              onClearScope={() => setCurrentScope(null)}
               onTriggerScopeSelect={() => {}}
             />
 

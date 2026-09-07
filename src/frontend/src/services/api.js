@@ -170,6 +170,11 @@ export const documentsApi = {
   delete: (id) => request(`/documents/${id}`, {
     method: 'DELETE',
   }),
+
+  // Delete all documents for the user from R2, MongoDB, and Qdrant
+  deleteAll: () => request('/documents/all', {
+    method: 'DELETE',
+  }),
 };
 
 /**

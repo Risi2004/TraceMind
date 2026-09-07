@@ -452,9 +452,13 @@ export const generateEmbedding = async (text, retries = 2) => {
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
-        throw new Error(
-          `Ollama embedding error (HTTP ${response.status}): ${errBody || response.statusText}. Ensure model "${model}" is pulled on your RunPod pod.`
-        );
+        let detailedMsg;
+        if (response.status === 404 && (!errBody || errBody.trim() === '')) {
+          detailedMsg = `RunPod proxy returned HTTP 404 at ${baseUrl}. The pod is stopped, port 11434 is not listening, or the RunPod Pod ID has changed.`;
+        } else {
+          detailedMsg = `Ollama embedding error (HTTP ${response.status}): ${errBody || response.statusText}. Ensure model "${model}" is pulled on your RunPod pod.`;
+        }
+        throw new Error(detailedMsg);
       }
 
       const data = await response.json();

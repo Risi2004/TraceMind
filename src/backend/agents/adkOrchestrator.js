@@ -418,20 +418,34 @@ export const executeAdkInvestigation = async ({
     },
   });
 
-  // Format sources for citation rendering
-  const sources = accumulatedChunks.map((chunk, idx) => ({
-    fileName: chunk.fileName,
-    pageNumber: chunk.pageNumber || 1,
-    documentId: chunk.documentId,
-    chunkNumber: chunk.chunkNumber || idx + 1,
-    similarityScore: chunk.similarityScore,
-    chunkExcerpt:
-      chunk.chunkText && chunk.chunkText.length > 220
-        ? `${chunk.chunkText.slice(0, 220)}...`
-        : (chunk.chunkText || ''),
-    fullText: chunk.chunkText,
-    pointId: chunk.pointId,
-  }));
+  // Format sources for citation rendering with ZIP archive awareness
+  const sources = accumulatedChunks.map((chunk, idx) => {
+    const archivePath = chunk.archiveName
+      ? `${chunk.archiveName}/${chunk.relativePath || chunk.fileName}`
+      : null;
+    const isImage = Boolean(chunk.isImage || chunk.sourceType === 'image');
+    return {
+      fileName: chunk.fileName,
+      archiveName: chunk.archiveName || null,
+      relativePath: chunk.relativePath || null,
+      fullPath: archivePath || chunk.fileName,
+      pageNumber: chunk.pageNumber || 1,
+      documentId: chunk.documentId,
+      chunkNumber: chunk.chunkNumber || idx + 1,
+      similarityScore: chunk.similarityScore,
+      isImage,
+      sourceType: chunk.sourceType || (isImage ? 'image' : 'document'),
+      citationTag: isImage
+        ? `[Image: ${archivePath || chunk.fileName} | Visual Evidence]`
+        : `[Doc: ${archivePath || chunk.fileName} | Page ${chunk.pageNumber || 1}]`,
+      chunkExcerpt:
+        chunk.chunkText && chunk.chunkText.length > 220
+          ? `${chunk.chunkText.slice(0, 220)}...`
+          : (chunk.chunkText || ''),
+      fullText: chunk.chunkText,
+      pointId: chunk.pointId,
+    };
+  });
 
   adkLogger.logInvestigationCompletion({
     totalRounds: currentRound,

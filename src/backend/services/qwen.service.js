@@ -103,8 +103,13 @@ MANDATORY REASONING & GROUNDING RULES:
 
 8. CITATION INTEGRITY:
    - Keep citations attached directly to the claims they support:
-     * For document pages: [FileName, Page X]
-     * For visual evidence: [FileName, Image Evidence]
+     * For document pages: [Doc: <filePath> | Page X]
+     * For images / visual evidence: [Image: <filePath> | Visual Evidence]
+     * If an archive path exists, the citation MUST show the path inside the archive, for example:
+       [Doc: investigation.zip/reports/finance/q1.pdf | Page 3]
+       [Image: investigation.zip/evidence/scene1.png | Visual Evidence]
+     * For standalone documents: [Doc: file.pdf | Page 1]
+     * For standalone images: [Image: photo.png | Visual Evidence]
 
 9. ANSWER STRUCTURE & CONCISENESS:
    - For simple factual questions (e.g. "What is the route distance?", "What is the item count?"):
@@ -135,12 +140,18 @@ Please advise that no document evidence is available to answer this question.`;
         chunk.sourceType === 'image' ||
         /\.(png|jpg|jpeg|webp)$/i.test(fileName)
       );
-      const locationLabel = isImage ? 'Image Evidence (Visual Capture)' : `Page: ${chunk.pageNumber || 1}`;
+      const archiveName = chunk.archiveName || chunk.payload?.archiveName;
+      const relativePath = chunk.relativePath || chunk.payload?.relativePath;
+      const fullDisplayPath = archiveName ? `${archiveName}/${relativePath || fileName}` : (relativePath || fileName);
+      const locationLabel = isImage ? 'Visual Evidence' : `Page ${chunk.pageNumber || 1}`;
+      const citationTag = isImage
+        ? `[Image: ${fullDisplayPath} | Visual Evidence]`
+        : `[Doc: ${fullDisplayPath} | Page ${chunk.pageNumber || 1}]`;
       const score = chunk.similarityScore ? ` (Relevance: ${(chunk.similarityScore * 100).toFixed(1)}%)` : '';
 
-      return `[Source ${sourceNum}]: File: "${fileName}" | ${locationLabel}${score}
+      return `[Source ${sourceNum}]: ${citationTag} (File: "${fullDisplayPath}" | ${locationLabel})${score}
 """
-${chunk.chunkText}
+${chunk.chunkText || chunk.text}
 """`;
     })
     .join('\n\n');

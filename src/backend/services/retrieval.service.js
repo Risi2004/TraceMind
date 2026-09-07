@@ -95,6 +95,10 @@ export const retrieveRelevantChunks = async ({
       return {
         chunkText,
         fileName: payload.fileName || '',
+        archiveName: payload.archiveName || null,
+        relativePath: payload.relativePath || null,
+        sourceType: payload.sourceType || (payload.isImage ? 'image' : 'document'),
+        isImage: Boolean(payload.isImage),
         documentId: payload.documentId || '',
         pageNumber: payload.pageNumber || 1,
         chunkNumber:
