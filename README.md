@@ -496,11 +496,11 @@ npm run build:frontend
 
 ## 📄 License
 
-This project is licensed under the **ISC License**. Developed for the **AI Innovation Challenge**.
+This project is licensed under the **ISC License**. Developed for the **SLIIT CODEFEST 2026 - AI Innovation Challenge Powered By IFS**.
 
 ---
 
 <p align="center">
-  <b>Built with ❤️ by the TraceMind Team</b><br>
+  <b>Built with ❤️ by the Team HireMind</b><br>
   <i>Empowering Grounded, Calibrated Multi-Agent Document Intelligence</i>
 </p>
