@@ -25,7 +25,7 @@ const documentSchema = new mongoose.Schema(
     },
     fileType: {
       type: String,
-      enum: ['PDF', 'DOCX', 'TXT', 'MD', 'OTHER'],
+      enum: ['PDF', 'DOCX', 'TXT', 'MD', 'IMAGE', 'OTHER'],
       default: 'OTHER',
       uppercase: true,
     },
@@ -60,7 +60,7 @@ const documentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['uploaded', 'processing', 'indexed', 'ready', 'failed'],
+      enum: ['uploaded', 'processing', 'analyzing', 'indexed', 'ready', 'failed'],
       default: 'uploaded',
       index: true,
     },
@@ -121,6 +121,11 @@ documentSchema.statics.detectFileType = function (filename) {
     case 'md':
     case 'markdown':
       return { fileType: 'MD', extension: ext };
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'webp':
+      return { fileType: 'IMAGE', extension: ext };
     default:
       return { fileType: 'OTHER', extension: ext };
   }

@@ -6,6 +6,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
   LayersIcon,
+  ImageIcon,
   AlertCircleIcon,
   ChevronDownIcon,
   CloseIcon,
@@ -31,6 +32,7 @@ export const InvestigationPanel = ({
     switch (iconName) {
       case 'search': return <SearchIcon size={14} />;
       case 'brain': return <BrainIcon size={14} />;
+      case 'image': return <ImageIcon size={14} />;
       case 'alert': return <AlertCircleIcon size={14} />;
       case 'layers': return <LayersIcon size={14} />;
       case 'shield': return <ShieldCheckIcon size={14} />;

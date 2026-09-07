@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   FileTextIcon,
+  ImageIcon,
   SearchIcon,
   FilterIcon,
   TrashIcon,
@@ -49,7 +50,9 @@ export const DocumentsView = ({
       filename.includes(query);
 
     const matchesFormat =
-      selectedFormat === 'all' || format === selectedFormat.toLowerCase();
+      selectedFormat === 'all' ||
+      format === selectedFormat.toLowerCase() ||
+      (selectedFormat === 'image' && ['image', 'png', 'jpg', 'jpeg', 'webp'].includes(format));
 
     const matchesStatus =
       selectedStatus === 'all' || status === selectedStatus.toLowerCase();
@@ -66,6 +69,8 @@ export const DocumentsView = ({
       case 'ready':
       case 'indexed':
         return 'status-ready';
+      case 'analyzing':
+        return 'status-analyzing';
       case 'processing':
         return 'status-processing';
       case 'failed':
@@ -89,7 +94,7 @@ export const DocumentsView = ({
               <span className="documents-count-pill">{documents.length} Files</span>
             </div>
             <p className="documents-view-subtitle">
-              Stored securely in private Cloudflare R2 bucket. Upload documents from the Chat workspace.
+              Stored securely in private Cloudflare R2 bucket. Upload documents or images from the Chat workspace.
             </p>
           </div>
         </div>
@@ -154,7 +159,8 @@ export const DocumentsView = ({
             >
               <option value="all">All Statuses</option>
               <option value="uploaded">Uploaded</option>
-              <option value="processing">Processing</option>
+              <option value="analyzing">Analyzing (Vision)</option>
+              <option value="processing">Processing (RAG)</option>
               <option value="indexed">Indexed</option>
               <option value="ready">Ready</option>
               <option value="failed">Failed</option>
@@ -172,6 +178,7 @@ export const DocumentsView = ({
             >
               <option value="all">All Formats</option>
               <option value="pdf">PDF Documents</option>
+              <option value="image">Images (PNG/JPG/WEBP)</option>
               <option value="docx">Word (DOCX)</option>
               <option value="txt">Text (TXT)</option>
               <option value="md">Markdown (MD)</option>
@@ -207,7 +214,7 @@ export const DocumentsView = ({
           </h3>
           <p className="empty-desc">
             {documents.length === 0
-              ? 'Upload your PDF, DOCX, TXT, Markdown, or ZIP files directly from the Chat workspace using the attachment button or drag & drop.'
+              ? 'Upload your PDF, DOCX, TXT, Markdown, Images (PNG/JPG/WEBP), or ZIP files directly from the Chat workspace using the attachment button or drag & drop.'
               : 'Try adjusting your search query or format filters.'}
           </p>
         </div>

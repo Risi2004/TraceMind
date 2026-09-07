@@ -1,5 +1,6 @@
 import { runPlannerAgent } from './planner.agent.js';
 import { runRetrievalAgent } from './retrieval.agent.js';
+import { runVisionAgent, getVisionAgentModel } from './vision.agent.js';
 import { runEvidenceAgent } from './evidence.agent.js';
 import { runConflictAgent } from './conflict.agent.js';
 import { runSufficiencyAgent } from './sufficiency.agent.js';
@@ -13,17 +14,19 @@ import adkLogger from '../services/adkLogger.service.js';
  * Coordinates the multi-hop, iterative RAG search loop with structured evaluation telemetry:
  * 1. Planner Agent
  * 2. Retrieval Agent
- * 3. Evidence Agent
- * 4. Source Reliability & Conflict Agent
- * 5. Sufficiency Agent
- * 6. Follow-up Search Agent
- * 7. Answer Agent
+ * 3. Vision Agent (Dedicated visual/image analysis with Qwen3-VL:8b)
+ * 4. Evidence Agent
+ * 5. Source Reliability & Conflict Agent
+ * 6. Sufficiency Agent
+ * 7. Follow-up Search Agent
+ * 8. Answer Agent
  */
 
 export const executeAdkInvestigation = async ({
   query,
   userId,
   documentId,
+  scopeName = null,
   chatHistory = [],
   maxRounds,
   topK,
@@ -44,6 +47,7 @@ export const executeAdkInvestigation = async ({
   const executionEvents = [];
   const accumulatedChunks = [];
   const accumulatedFacts = [];
+  const accumulatedClassifiedClaims = [];
   const seenChunkIds = new Set();
   const previousQueries = [];
 
@@ -57,7 +61,7 @@ export const executeAdkInvestigation = async ({
   // -------------------------------------------------------------
   const plan = await runPlannerAgent({
     question: query,
-    scopeName: documentId ? `Document (${documentId})` : 'All Documents',
+    scopeName: scopeName || (documentId && documentId !== 'all' ? 'Target Document Asset' : 'All Documents'),
   });
 
   currentSearchQuery = plan.primaryQuery || query;
@@ -139,7 +143,55 @@ export const executeAdkInvestigation = async ({
       },
     });
 
-    // 2B & 2C. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
+    // 2B. Dedicated Google ADK Vision Agent (Invoke ONLY if visual/image content is retrieved)
+    const imageChunks = (retrievalResult.newChunks || []).filter(
+      (chunk) =>
+        chunk.isImage ||
+        chunk.sourceType === 'image' ||
+        chunk.contentType === 'image' ||
+        /\.(png|jpe?g|webp)$/i.test(chunk.fileName || '')
+    );
+
+    if (imageChunks.length > 0) {
+      const visionResult = await runVisionAgent({
+        visualChunks: imageChunks,
+        fileName: imageChunks[0]?.fileName || 'Visual Evidence',
+        documentId: imageChunks[0]?.documentId || documentId,
+        pageNumber: imageChunks[0]?.pageNumber || 1,
+        question: query,
+      });
+
+      investigationSteps.push({
+        step: investigationSteps.length + 1,
+        title: `Vision Agent Evidence Inspection (Round ${currentRound})`,
+        icon: 'image',
+        status: 'completed',
+        details: visionResult.structuredEvidence?.summary || `Examined ${imageChunks.length} visual asset(s) with Qwen3-VL:8B.`,
+        found:
+          visionResult.structuredEvidence?.importantFacts && visionResult.structuredEvidence.importantFacts.length > 0
+            ? visionResult.structuredEvidence.importantFacts.slice(0, 2).join(' • ')
+            : 'Visual diagram and OCR markings verified.',
+      });
+
+      executionEvents.push({
+        agent: 'vision',
+        event: 'VISION_ANALYSIS_COMPLETED',
+        round: currentRound,
+        message: `Visual evidence extracted from ${imageChunks.length} asset${imageChunks.length === 1 ? '' : 's'}`,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          confidence: visionResult.structuredEvidence?.confidence || 'high',
+          visualChunksCount: imageChunks.length,
+          model: getVisionAgentModel(),
+        },
+      });
+
+      if (visionResult.structuredEvidence?.importantFacts) {
+        accumulatedFacts.push(...visionResult.structuredEvidence.importantFacts);
+      }
+    }
+
+    // 2C & 2D. Run Evidence Agent and Conflict Agent in parallel for 2x faster investigation
     const [evidenceResult, conflictReportResult] = await Promise.all([
       runEvidenceAgent({
         question: query,
@@ -159,13 +211,25 @@ export const executeAdkInvestigation = async ({
     if (evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0) {
       accumulatedFacts.push(...evidenceResult.extractedFacts);
     }
+    if (evidenceResult.classifiedClaims && evidenceResult.classifiedClaims.length > 0) {
+      accumulatedClassifiedClaims.push(...evidenceResult.classifiedClaims);
+    }
+
+    const claimsCount = evidenceResult.classifiedClaims?.length || 0;
+    const claimsDisplay =
+      claimsCount > 0
+        ? ` (${claimsCount} claim${claimsCount === 1 ? '' : 's'} calibrated: ${evidenceResult.classifiedClaims
+            .map((c) => c.level)
+            .slice(0, 3)
+            .join(', ')})`
+        : '';
 
     investigationSteps.push({
       step: investigationSteps.length + 1,
       title: `Evidence Analysis (Round ${currentRound})`,
       icon: 'layers',
       status: 'completed',
-      details: evidenceResult.summary,
+      details: `${evidenceResult.summary}${claimsDisplay}`,
       found:
         evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0
           ? evidenceResult.extractedFacts.slice(0, 2).join(' • ')
@@ -180,6 +244,7 @@ export const executeAdkInvestigation = async ({
       timestamp: new Date().toISOString(),
       metadata: {
         factsExtracted: evidenceResult.extractedFacts?.length || 0,
+        claimsCalibrated: claimsCount,
         analyzedChunks: retrievalResult.newChunks?.length || 0,
       },
     });
@@ -216,14 +281,6 @@ export const executeAdkInvestigation = async ({
           sourcesCount: conflictReport.conflictingSources?.length || 0,
         },
       });
-    } else if (accumulatedChunks.length >= 2) {
-      investigationSteps.push({
-        step: investigationSteps.length + 1,
-        title: 'Source Consistency Verified',
-        icon: 'shield',
-        status: 'completed',
-        details: 'Cross-document consistency confirmed across all retrieved sources.',
-      });
     }
 
     // 2D. Sufficiency Agent (Evaluate completeness & conflict resolution)
@@ -231,6 +288,7 @@ export const executeAdkInvestigation = async ({
       question: query,
       accumulatedFacts,
       accumulatedChunks,
+      classifiedClaims: accumulatedClassifiedClaims,
       conflictReport,
       currentRound,
     });
@@ -331,6 +389,7 @@ export const executeAdkInvestigation = async ({
     question: query,
     accumulatedChunks,
     accumulatedFacts,
+    classifiedClaims: accumulatedClassifiedClaims,
     conflictReport,
     chatHistory,
   });

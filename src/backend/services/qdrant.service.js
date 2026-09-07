@@ -256,7 +256,7 @@ export const searchSimilarChunks = async ({
   documentId,
   queryVector,
   limit = 5,
-  scoreThreshold = 0.5,
+  scoreThreshold = 0.35,
 }) => {
   const client = getQdrantClient();
   const collectionName = getQdrantCollectionName();

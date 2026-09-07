@@ -394,6 +394,16 @@
   border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
+.doc-format-badge[data-format="image"],
+.doc-format-badge[data-format="png"],
+.doc-format-badge[data-format="jpg"],
+.doc-format-badge[data-format="jpeg"],
+.doc-format-badge[data-format="webp"] {
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
 .doc-status-badge {
   display: flex;
   align-items: center;
@@ -427,6 +437,23 @@
 .doc-status-badge.status-uploaded .status-dot {
   background: #3b82f6;
   box-shadow: 0 0 6px #3b82f6;
+}
+
+.doc-status-badge.status-analyzing {
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.doc-status-badge.status-analyzing .status-dot {
+  background: #a855f7;
+  box-shadow: 0 0 6px #a855f7;
+  animation: pulse-analyzing 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-analyzing {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
 }
 
 .doc-status-badge.status-processing {

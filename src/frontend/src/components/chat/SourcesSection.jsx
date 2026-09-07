@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheckIcon, ChevronDownIcon, FileTextIcon, ExternalLinkIcon } from '../common/Icons';
+import { ShieldCheckIcon, ChevronDownIcon, FileTextIcon, ImageIcon, ExternalLinkIcon } from '../common/Icons';
 import { MOCK_CITATIONS_DATABASE } from '../../mock/chatMockData';
 import './SourcesSection.css';
 
@@ -15,6 +15,14 @@ export const SourcesSection = ({
   const citations = citationIds
     .map(id => MOCK_CITATIONS_DATABASE[id])
     .filter(Boolean);
+
+  const isImageItem = (item) => {
+    if (!item) return false;
+    if (item.sourceType === 'image' || item.isImage) return true;
+    if (typeof item.pageNumber === 'string' && item.pageNumber.toLowerCase().includes('image')) return true;
+    const title = (item.docTitle || '').toLowerCase();
+    return /\.(png|jpe?g|webp)$/i.test(title);
+  };
 
   return (
     <div className="sources-section-container">
@@ -36,45 +44,54 @@ export const SourcesSection = ({
       {/* Collapsible Source Cards */}
       {isExpanded && (
         <div className="sources-cards-grid">
-          {citations.map((item) => (
-            <div
-              key={item.id}
-              className="source-card"
-              onClick={() => onOpenSourcePreview(item)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenSourcePreview(item); }}
-              title="Click to view full page passage preview"
-            >
-              <div className="source-card-top">
-                <div className="source-doc-info">
-                  <FileTextIcon size={14} className="doc-icon" />
-                  <span className="source-doc-name">{item.docTitle}</span>
-                </div>
-                {showConfidence && (
-                  <div className="source-match-tag">
-                    <span>{item.matchScore}</span>
+          {citations.map((item) => {
+            const isImg = isImageItem(item);
+            return (
+              <div
+                key={item.id}
+                className="source-card"
+                onClick={() => onOpenSourcePreview(item)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenSourcePreview(item); }}
+                title="Click to view full passage / vision inspection preview"
+              >
+                <div className="source-card-top">
+                  <div className="source-doc-info">
+                    {isImg ? (
+                      <ImageIcon size={14} className="doc-icon image-evidence-icon" />
+                    ) : (
+                      <FileTextIcon size={14} className="doc-icon" />
+                    )}
+                    <span className="source-doc-name">{item.docTitle}</span>
                   </div>
-                )}
-              </div>
+                  {showConfidence && (
+                    <div className="source-match-tag">
+                      <span>{item.matchScore}</span>
+                    </div>
+                  )}
+                </div>
 
-              <div className="source-card-meta">
-                <span className="source-page-badge">Page {item.pageNumber}</span>
-                <span className="source-section-name">{item.section}</span>
-              </div>
+                <div className="source-card-meta">
+                  <span className={`source-page-badge ${isImg ? 'image-badge' : ''}`}>
+                    {isImg ? 'Image Evidence' : `Page ${item.pageNumber}`}
+                  </span>
+                  <span className="source-section-name">{item.section}</span>
+                </div>
 
-              <p className="source-snippet-text">
-                "{item.snippet}"
-              </p>
+                <p className="source-snippet-text">
+                  "{item.snippet}"
+                </p>
 
-              <div className="source-card-footer">
-                <span className="preview-cta">
-                  <span>View Passage</span>
-                  <ExternalLinkIcon size={12} />
-                </span>
+                <div className="source-card-footer">
+                  <span className="preview-cta">
+                    <span>{isImg ? 'View Vision Detail' : 'View Passage'}</span>
+                    <ExternalLinkIcon size={12} />
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

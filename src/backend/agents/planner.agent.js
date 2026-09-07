@@ -1,5 +1,4 @@
-import { getOllamaBaseUrl } from '../services/ollama.service.js';
-import { getOllamaLlmModel } from '../services/qwen.service.js';
+import { callTextModel } from '../services/ollama.service.js';
 
 /**
  * 1. Planner Agent (Google ADK Architecture)
@@ -7,55 +6,30 @@ import { getOllamaLlmModel } from '../services/qwen.service.js';
  */
 
 export const runPlannerAgent = async ({ question, scopeName = 'all documents' }) => {
-  const baseUrl = getOllamaBaseUrl();
-  const model = getOllamaLlmModel();
-
   const systemPrompt = `You are the Lead Investigation Planner Agent in TraceMind's multi-hop reasoning system.
 Your task is to analyze the user's question and determine the key factual targets and the optimal initial search query.
 
 CRITICAL RULES:
 - Output your response strictly as valid JSON with keys:
   "goal": "A single sentence describing the primary fact-gathering objective",
-  "primaryQuery": "The most effective keyword/semantic search query to find this information in documents",
-  "entities": ["entity1", "entity2"] (key names, codes, dates, or IDs mentioned)
+  "primaryQuery": "Clean topical keyword/semantic search query (do NOT include filenames, file extensions like .png, database IDs, or the target scope)",
+  "entities": ["entity1", "entity2"] (key names, codes, dates, or item IDs mentioned in the question)
 - Do NOT output any markdown ticks, conversational text, or explanation outside the JSON.`;
 
-  const userPrompt = `Target Scope: ${scopeName}
-User Question: "${question}"
+  const userPrompt = `User Question: "${question}"
 
 Generate the JSON investigation plan:`;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-
-
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.1, num_predict: 256, num_ctx: 2048 },
-      }),
-      signal: controller.signal,
+    const rawContent = await callTextModel({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      format: 'json',
+      temperature: 0.1,
+      timeoutMs: 30000,
     });
-
-    clearTimeout(timeoutId);
-
-
-    if (!response.ok) {
-      throw new Error(`Planner LLM call failed with HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.message?.content || data.response || '{}';
 
     let parsed;
     try {
@@ -85,3 +59,4 @@ Generate the JSON investigation plan:`;
 };
 
 export default { runPlannerAgent };
+

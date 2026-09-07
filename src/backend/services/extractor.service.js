@@ -1,5 +1,6 @@
 import { createRequire } from 'module';
 import mammoth from 'mammoth';
+import { runVisionAgent } from '../agents/vision.agent.js';
 
 // Polyfill standard DOM objects for Node.js environment to cleanly silence PDF.js visual canvas warnings
 if (typeof globalThis.DOMMatrix === 'undefined') {
@@ -21,12 +22,12 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
 /**
- * Text Extractor Service for TraceMind RAG Pipeline
- * Supports PDF, DOCX, TXT, and Markdown files.
+ * Text & Vision Extractor Service for TraceMind RAG Pipeline
+ * Supports PDF, DOCX, TXT, Markdown, and Images (PNG, JPG, JPEG, WEBP).
  */
 
 /**
- * Extract raw text strings from corrupted or bad-XRef PDF buffers
+ * Extract raw text from corrupted or bad-XRef PDF buffers
  */
 const extractRawTextFromPdfBinary = (buffer) => {
   try {
@@ -95,13 +96,11 @@ export const extractTextFromPdf = async (buffer) => {
       verbosity: 0,
     });
 
-
-
     const pdfDoc = await loadingTask.promise;
     let fullText = '';
 
-    for (let p = 1; p <= pdfDoc.numPages; p++) {
-      const page = await pdfDoc.getPage(p);
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
         .map((item) => item.str)
@@ -111,42 +110,42 @@ export const extractTextFromPdf = async (buffer) => {
 
       if (pageText) {
         pages.push({
-          pageNumber: p,
+          pageNumber: pageNum,
           text: pageText,
         });
-        fullText += (fullText ? '\n\n' : '') + pageText;
+        fullText += (fullText ? '\n\n' : '') + `--- Page ${pageNum} ---\n` + pageText;
       }
     }
 
-    if (fullText.trim()) {
+    if (pages.length > 0) {
       return {
-        fullText: fullText.trim(),
-        pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: fullText.trim() }],
-        totalPages: pdfDoc.numPages || pages.length || 1,
+        fullText,
+        pages,
+        totalPages: pdfDoc.numPages,
       };
     }
   } catch (err) {
-    console.warn(`[PDF Parser] Modern pdfjs-dist parsing error: ${err.message}. Trying legacy parser...`);
+    console.warn(`[PDF Parser] Tier 1 (pdfjs-dist) parse error (${err.message}). Trying Tier 2 (pdf-parse)...`);
   }
 
-  // Tier 2 Fallback: Standard pdfParse without custom pagerender
+  // Tier 2: Standard pdf-parse fallback
   try {
+    const data = await pdfParse(buffer);
+    const fullText = (data.text || '').trim();
 
-    const fallbackParsed = await pdfParse(buffer);
-    const fullText = (fallbackParsed.text || '').trim();
     if (fullText) {
-      const rawPages = fullText.split(/\f/g);
-      const fallbackPages = [];
-      rawPages.forEach((text, i) => {
-        if (text.trim()) {
-          fallbackPages.push({ pageNumber: i + 1, text: text.trim() });
-        }
-      });
+      const pageChunks = fullText.split(/\f|\n(?=Page\s+\d+)/i);
+      const formattedPages = pageChunks
+        .map((t, idx) => ({
+          pageNumber: idx + 1,
+          text: t.trim(),
+        }))
+        .filter((p) => p.text.length > 0);
 
       return {
         fullText,
-        pages: fallbackPages.length > 0 ? fallbackPages : [{ pageNumber: 1, text: fullText }],
-        totalPages: fallbackParsed.numpages || 1,
+        pages: formattedPages.length > 0 ? formattedPages : [{ pageNumber: 1, text: fullText }],
+        totalPages: data.numpages || formattedPages.length || 1,
       };
     }
   } catch (err) {
@@ -164,7 +163,35 @@ export const extractTextFromPdf = async (buffer) => {
   };
 };
 
+/**
+ * Extract structured forensic visual evidence from an image using dedicated Google ADK Vision Agent
+ */
+export const extractFromImage = async ({ buffer, filename, mimeType, documentId }) => {
+  const visionResult = await runVisionAgent({
+    imageBuffer: buffer,
+    fileName: filename || 'image.png',
+    documentId: documentId || '',
+    pageNumber: 1,
+    imageIndex: 0,
+  });
 
+  return {
+    fullText: visionResult.formattedText,
+    pages: [
+      {
+        pageNumber: 1,
+        text: visionResult.formattedText,
+        isImage: true,
+      },
+    ],
+    totalPages: 1,
+    isImage: true,
+    contentType: 'image',
+    structuredEvidence: visionResult.structuredEvidence,
+    events: visionResult.events,
+    rawAnalysis: visionResult.rawResponse,
+  };
+};
 
 /**
  * Extract raw text from a DOCX Word document buffer
@@ -208,22 +235,35 @@ export const extractTextFromMarkdown = async (buffer) => {
 /**
  * Unified Extractor dispatcher by file type / extension
  */
-export const extractDocumentText = async ({ buffer, filename, fileType }) => {
+export const extractDocumentText = async ({ buffer, filename, fileType, mimeType, documentId }) => {
   const ext = (filename.split('.').pop() || '').toLowerCase();
   const type = (fileType || '').toUpperCase();
 
+  // CASE 1: Image files (PNG, JPG, JPEG, WEBP)
+  if (
+    type === 'IMAGE' ||
+    ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ||
+    (mimeType && mimeType.startsWith('image/'))
+  ) {
+    return extractFromImage({ buffer, filename, mimeType, documentId });
+  }
+
+  // CASE 2: PDF Documents
   if (type === 'PDF' || ext === 'pdf') {
     return extractTextFromPdf(buffer);
   }
 
+  // CASE 3: Word Documents
   if (type === 'DOCX' || ext === 'docx') {
     return extractTextFromDocx(buffer);
   }
 
+  // CASE 4: Markdown Documents
   if (type === 'MD' || ext === 'md' || ext === 'markdown') {
     return extractTextFromMarkdown(buffer);
   }
 
+  // CASE 5: Text Documents
   if (type === 'TXT' || ext === 'txt') {
     return extractTextFromTxt(buffer);
   }
@@ -239,6 +279,7 @@ export const extractDocumentText = async ({ buffer, filename, fileType }) => {
 
 export default {
   extractDocumentText,
+  extractFromImage,
   extractTextFromPdf,
   extractTextFromDocx,
   extractTextFromTxt,

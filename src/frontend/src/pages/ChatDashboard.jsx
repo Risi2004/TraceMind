@@ -230,6 +230,62 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   // Investigation panel state
   const [investigationOpen, setInvestigationOpen] = useState(true);
 
+  // Smart conversation title generator that extracts concise topic headings instead of full questions
+  const generateConversationTitle = (text) => {
+    if (!text || typeof text !== 'string') return 'Investigation Query';
+
+    let cleaned = text.trim();
+
+    // Remove surrounding quotes or markdown
+    cleaned = cleaned.replace(/^[*"`'“”#\s]+|[*"`'“”\s]+$/g, '').trim();
+
+    // Comprehensive question filler patterns
+    const fillerPatterns = [
+      /^(?:can\s+you\s+please\s+tell\s+me\s+about\s+the|can\s+you\s+please\s+tell\s+me\s+about|can\s+you\s+tell\s+me\s+about\s+the|can\s+you\s+tell\s+me\s+about|can\s+you\s+tell\s+me\s+the|can\s+you\s+tell\s+me|could\s+you\s+please\s+explain|could\s+you\s+explain|could\s+you\s+tell\s+me)\s*/i,
+      /^(?:please\s+tell\s+me\s+about|please\s+explain\s+to\s+me|please\s+explain|please\s+provide\s+details\s+on|please\s+provide|please\s+find)\s*/i,
+      /^(?:at\s+what\s+time\s+did\s+the|at\s+what\s+time\s+did|at\s+what\s+time|what\s+time\s+did\s+the|what\s+time\s+is\s+the|what\s+time\s+is)\s*/i,
+      /^(?:who\s+commanded\s+the|who\s+was\s+in\s+charge\s+of\s+the|who\s+was\s+the|who\s+is\s+the|who\s+are\s+the)\s*/i,
+      /^(?:what\s+is\s+the\s+purpose\s+of|what\s+is\s+the|what\s+are\s+the|what\s+were\s+the|what\s+did\s+the)\s*/i,
+      /^(?:how\s+did\s+the|how\s+does\s+the|how\s+can\s+we|how\s+to|why\s+did\s+the|why\s+does\s+the|why\s+is\s+there)\s*/i,
+      /^(?:tell\s+me\s+about\s+the|tell\s+me\s+about|tell\s+me|summarize\s+the|summarize|explain\s+the|explain|describe\s+the|describe)\s*/i,
+      /^(?:search\s+for\s+the|search\s+for|find\s+the|find\s+information\s+on|find\s+out\s+about|give\s+me\s+the|give\s+me)\s*/i,
+      /^(?:inquire\s+about|investigate\s+the|investigate|details\s+regarding|details\s+on)\s*/i,
+    ];
+
+    for (const pattern of fillerPatterns) {
+      cleaned = cleaned.replace(pattern, '').trim();
+    }
+
+    // Strip trailing punctuation
+    cleaned = cleaned.replace(/[?!.:;,—–-]+$/g, '').trim();
+
+    // If too short, fallback to original text without punctuation
+    if (cleaned.length < 3) {
+      cleaned = text.replace(/[?!.:;,—–-]+$/g, '').trim();
+    }
+
+    if (!cleaned) return 'Investigation Query';
+
+    // Capitalize words into Title Case
+    const words = cleaned.split(/\s+/).slice(0, 6);
+    const minorWords = new Set(['a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'by', 'with']);
+    const titleCased = words
+      .map((word, idx) => {
+        const lower = word.toLowerCase();
+        if (idx > 0 && minorWords.has(lower)) {
+          return lower;
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(' ');
+
+    if (titleCased.length > 32) {
+      return `${titleCased.slice(0, 30).trim()}...`;
+    }
+
+    return titleCased;
+  };
+
   // Chat conversation state — Clean initial state (no pre-selected document scope)
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -238,11 +294,25 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   const [investigationStepText, setInvestigationStepText] = useState('Searching Documents...');
   const [activeInvestigationSteps, setActiveInvestigationSteps] = useState([]);
 
-  // Persistent chat history loaded from localStorage
+  // Persistent chat history loaded from localStorage (with auto-sanitization for headings & timestamps)
   const [chatHistory, setChatHistory] = useState(() => {
     try {
       const saved = localStorage.getItem(`tracemind_chat_history_${authUser?._id || 'guest'}`);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item, idx) => ({
+          ...item,
+          title: item.title
+            ? (item.title.endsWith('?') || /^(?:At what|Who commanded|Can you tell|What is|Why did)/i.test(item.title)
+                ? generateConversationTitle(item.title)
+                : item.title)
+            : 'Investigation Query',
+          createdAt: item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+          lastUpdated: item.lastUpdated || item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+        }));
+      }
+      return [];
     } catch {
       return [];
     }
@@ -266,7 +336,18 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setChatHistory(parsed);
+          setChatHistory(
+            parsed.map((item, idx) => ({
+              ...item,
+              title: item.title
+                ? (item.title.endsWith('?') || /^(?:At what|Who commanded|Can you tell|What is|Why did)/i.test(item.title)
+                    ? generateConversationTitle(item.title)
+                    : item.title)
+                : 'Investigation Query',
+              createdAt: item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+              lastUpdated: item.lastUpdated || item.createdAt || Date.now() - idx * 25 * 60 * 1000,
+            }))
+          );
         }
       } else {
         setChatHistory([]);
@@ -379,6 +460,23 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setMessages(historyItem.messages || []);
     setCurrentScope(historyItem.scope || null);
     setActiveInvestigationSteps(historyItem.investigationSteps || []);
+  };
+
+  // Rename an existing conversation in history
+  const handleRenameHistory = (sessionId, newTitle) => {
+    if (!sessionId || !newTitle) return;
+    setChatHistory((prev) =>
+      prev.map((item) => (item.id === sessionId ? { ...item, title: newTitle } : item))
+    );
+  };
+
+  // Delete a conversation from history
+  const handleDeleteHistory = (sessionId) => {
+    if (!sessionId) return;
+    setChatHistory((prev) => prev.filter((item) => item.id !== sessionId));
+    if (currentSessionId === sessionId) {
+      handleNewChat();
+    }
   };
 
   // Document Management handlers (Cloudflare R2 + MongoDB)
@@ -773,11 +871,12 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             };
             return updated;
           } else {
-            // Prepend new conversation session
+            // Prepend new conversation session with clean synthesized topic heading
+            const generatedTitle = generateConversationTitle(userText);
             const newSession = {
               id: activeSessionId,
-              title: userText.length > 36 ? `${userText.slice(0, 36)}...` : userText,
-              date: 'Just now',
+              title: generatedTitle,
+              date: new Date().toISOString(),
               scope: scopeToUse,
               messages: updatedMessages,
               investigationSteps: returnedSteps,
@@ -844,6 +943,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         onSelectView={handleSelectView}
         onNewChat={handleNewChat}
         onSelectHistory={handleSelectHistory}
+        onRenameHistory={handleRenameHistory}
+        onDeleteHistory={handleDeleteHistory}
         onNavigate={onNavigate}
         user={currentUser}
         onOpenProfile={() => setProfileModalOpen(true)}

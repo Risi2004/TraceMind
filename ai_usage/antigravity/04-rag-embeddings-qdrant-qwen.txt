@@ -266,6 +266,96 @@ PROMPT / INTERACTION 15: Real-Time & Post-Answer Interactive 3D Agent Flow Visua
   4. The right-hand `InvestigationPanel.jsx` drawer.
 - Implemented real-time dynamic progression tracking in `ChatDashboard.jsx` allowing users to open and watch the 3D Agent Flow in real-time while TraceMind processes on RunPod.
 
-================================================================================
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 16: Multi-Modal Image Upload & Qwen3-VL:8B Vision Ingestion Pipeline
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Update the existing TraceMind application to support image upload and image processing without breaking the current document ingestion pipeline:
+1. Allow users to upload multiple images along with existing document types (PDF, DOCX, TXT, MD, ZIP) up to 300MB combined limit.
+2. Support PNG, JPG, JPEG, and WEBP formats.
+3. Store uploaded images in the existing private Cloudflare R2 bucket (`users/{userId}/documents/{docId}/{cleanFilename}`).
+4. Use Qwen3-VL:8B running through Ollama on RunPod for image/vision analysis.
+5. Extract structured forensic information: visible text, OCR labels, diagrams, tables, relationships, forensic markings, timestamps, and evidence.
+6. Convert vision model results into clean structured text and preserve metadata (userId, documentId, filename, isImage, sourceType: 'image').
+7. Generate dense vector embeddings using Nomic Embed and store vectors strictly in Qdrant Cloud (not MongoDB).
+8. Make image-derived evidence searchable by existing ADK retrieval agents together with normal document chunks.
+9. Distinguish citations clearly: `[FileName, Image Evidence]` for visual assets and `[FileName, Page X]` for standard documents.
+10. Only run vision processing on image files and scanned/low-text PDF pages (< 50 text chars) to keep regular PDFs fast.
+11. Add UI upload support, image format filters, image evidence tags, and clear loading states (`Uploading -> Analyzing image -> Creating embeddings -> Indexed in Qdrant`).
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Backend Architecture:
+  * Created `src/backend/services/vision.service.js`: Calls RunPod Ollama `/api/generate` with base64 encoded image buffers and structured forensic prompt. Includes automatic model fallback negotiation (`qwen3-vl:8b` -> `qwen2.5-vl:7b` -> `qwen2.5-vl`) and graceful metadata fallback generator.
+  * Updated `src/backend/models/Document.js`: Added `fileType: 'IMAGE'` and `status: 'analyzing'`, with automatic extension mapping for `.png, .jpg, .jpeg, .webp`.
+  * Updated `src/backend/routes/document.routes.js`: Expanded Multer file filter to accept image formats (`.png, .jpg, .jpeg, .webp, image/*`).
+  * Updated `src/backend/controllers/document.controller.js`: Forwarded mimeType and image flags through the asynchronous `ragProcessingQueue`.
+  * Updated `src/backend/services/extractor.service.js`: Added dispatch routing for image buffers to `analyzeImageWithQwenVL` and selective vision fallback for low-text scanned PDF pages.
+  * Updated `src/backend/services/chunking.service.js`: Tagged image chunks with `isImage: true` and `sourceType: 'image'`.
+  * Updated `src/backend/services/ingestion.service.js`: Implemented status transitions (`analyzing` -> `processing` -> `ready`) and stored image vector points into Qdrant Cloud collection.
+  * Updated `src/backend/services/qwen.service.js`: Added Rule 9 citation formatting requiring `[FileName, Image Evidence]` for image-derived chunks.
+  * Updated `src/backend/.env`: Added `OLLAMA_VISION_MODEL=qwen3-vl:8b`.
+- Frontend Experience:
+  * Added `ImageIcon` component in `src/frontend/src/components/common/Icons.jsx`.
+  * Updated `src/frontend/src/components/chat/ChatInput.jsx`: Added multi-image selection, image previews, and staged image chips.
+  * Updated `src/frontend/src/components/documents/DocumentsView.jsx` & `DocumentsView.css`: Added image format filter (`Images (PNG/JPG/WEBP)`), `IMAGE` badge styling, and `status-analyzing` pulsing status.
+  * Updated `src/frontend/src/components/chat/SourcesSection.jsx` & `SourcesSection.css`: Rendered `ImageIcon` and `Image Evidence` tags for cited visual assets.
+  * Updated `src/frontend/src/components/chat/SourcePreviewModal.jsx` & `SourcePreviewModal.css`: Tailored modal preview to display `Image Evidence • Qwen3-VL Forensic Vision Extraction`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 17: Dynamic Timestamps, Smart Topic Headings, Rename & Delete
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Here the time stamps show only just now change it dynamically and put like a heading for the chat without putting the first question as the chat heading allow users to rename delete the chat.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Dynamic Relative Timestamps:
+  * Implemented `formatRelativeTime(timestamp)` in `ChatSidebar.jsx` dynamically computing relative time labels (`Just now`, `5m ago`, `2h ago`, `Yesterday`, `3d ago`, `Sep 5`, etc.) from conversation timestamps (`lastUpdated` or `createdAt`).
+  * Added auto-refresh interval (every 30s) so displayed time labels advance accurately while the user remains in the application.
+- Smart Conversation Topic Heading Generator:
+  * Implemented `generateConversationTitle(text)` in `ChatDashboard.jsx`.
+  * Strips conversational query prefixes (e.g., "At what time did the...", "Who commanded the...", "Can you tell me the...", "What is the...", "Please explain...", "Summarize...") and punctuation.
+  * Transforms remaining key terms into clean Title Case headings (e.g. "Furnace F-102 Explode", "Velmora Expedition", "Exam Codes for Module 4") instead of dumping raw questions.
+  * Added auto-migration on mount for existing stored history records.
+- Inline Conversation Rename & Deletion:
+  * Added Rename (`EditIcon`) and Delete (`TrashIcon`) hover/active actions to every conversation row in `ChatSidebar.jsx`.
+  * Built inline editing input with keyboard support (`Enter` to save, `Escape` to cancel) and `CheckIcon` / `CloseIcon` controls.
+  * Added `handleRenameHistory` and `handleDeleteHistory` in `ChatDashboard.jsx` synchronizing state and localStorage, with auto-reset to a new chat if the active session is deleted.
+  * Styled with sleek dark-mode glassmorphic hover animations in `ChatSidebar.css`.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 18: Dedicated Google ADK Vision Agent Refactoring (vision.agent.js)
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Refactor the existing TraceMind image-processing implementation to use a dedicated Vision Agent:
+1. Create a dedicated Google ADK agent: `src/backend/agents/vision.agent.js` powered by `qwen3-vl:8b` via Ollama on RunPod.
+2. Extract structured visual evidence (visibleText, entities, relationships, importantFacts, summary, confidence, source) and output clean RAG text.
+3. Keep chain-of-thought private; emit safe high-level telemetry events (`VISION_ANALYSIS_STARTED`, `VISUAL_TEXT_EXTRACTED`, `VISION_ANALYSIS_COMPLETED`).
+4. Integrate with `src/backend/agents/adkOrchestrator.js`:
+   - Ingestion: Upload -> Cloudflare R2 -> Vision Agent -> structured evidence -> Nomic embedding -> Qdrant.
+   - Query: Planner -> Retrieval -> (If image evidence found) -> Vision Agent -> Evidence Agent -> Conflict Agent -> Sufficiency Agent -> Answer Agent.
+   - Normal text-only queries bypass Vision Agent to eliminate unnecessary latency.
+5. Store vectors strictly in Qdrant with visual metadata (`isImage: true`, `sourceType: 'image'`, `contentType: 'image'`, `visionModel: 'qwen3-vl:8b'`), not in MongoDB.
+6. Preserve all existing 7 agents (`planner`, `retrieval`, `evidence`, `conflict`, `sufficiency`, `followup`, `answer`).
+7. Update 3D Agent Flow Modal & Investigation Panel in frontend with Vision Agent node and cyan palette.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Created `src/backend/agents/vision.agent.js`:
+  * Implemented `runVisionAgent` handling both standalone image buffer ingestion and query-time visual evidence inspection.
+  * Implemented structured JSON extraction adhering to specification with `formatVisualEvidenceForRAG` generator.
+  * Implemented safe status event emission (`VISION_ANALYSIS_STARTED`, `VISUAL_TEXT_EXTRACTED`, `VISION_ANALYSIS_COMPLETED`).
+- Updated `src/backend/services/extractor.service.js`:
+  * Delegated image parsing and visual PDF page extraction to `runVisionAgent`.
+- Updated `src/backend/agents/adkOrchestrator.js`:
+  * Registered `runVisionAgent` and configured conditional execution based on retrieved visual chunks.
+- Updated `src/backend/services/chunking.service.js` & `ingestion.service.js`:
+  * Enriched chunk metadata with `contentType: 'image'`, `isImage: true`, `sourceType: 'image'`, `visionModel: 'qwen3-vl:8b'`.
+- Updated Frontend:
+  * `src/frontend/src/components/chat/AgentFlowModal.jsx`: Added `vision` node configuration with `ImageIcon` and `#06b6d4` color scheme in 3D WebGL orbit graph.
+  * `src/frontend/src/components/chat/InvestigationPanel.jsx`: Added `vision` / `image` step icon support.
+- Verification:
+  * Verified text RAG, standalone image ingestion, scanned PDF fallback, and visual chunk inspection via `test_vision_agent_refactor.js` (ALL TESTS PASSED).
+  * Frontend built cleanly in 2.10s with 0 errors.
+
+===============================================================================
 END OF SESSION 04 LOG
-================================================================================
+===============================================================================

@@ -8,6 +8,7 @@ import {
   BrainIcon,
   ShieldCheckIcon,
   FileTextIcon,
+  ImageIcon,
   NetworkIcon,
   ActivityIcon
 } from '../common/Icons';
@@ -28,6 +29,13 @@ const AGENT_CONFIG = {
     emissive: '#1d4ed8',
     icon: SearchIcon,
     description: 'Executes dense vector search in Qdrant Cloud',
+  },
+  vision: {
+    label: 'Vision Agent',
+    color: '#06b6d4',
+    emissive: '#0891b2',
+    icon: ImageIcon,
+    description: 'Inspects visual evidence, OCR, schematics & diagrams with Qwen3-VL:8b',
   },
   evidence: {
     label: 'Evidence Agent',
@@ -87,6 +95,7 @@ export const AgentFlowModal = ({ isOpen, onClose, flowData }) => {
       return steps.map((s, idx) => {
         let agent = 'retrieval';
         if (s.icon === 'brain' || s.title?.toLowerCase().includes('plan')) agent = 'planner';
+        else if (s.icon === 'image' || s.title?.toLowerCase().includes('vision') || s.title?.toLowerCase().includes('visual')) agent = 'vision';
         else if (s.icon === 'layers' || s.title?.toLowerCase().includes('evidence')) agent = 'evidence';
         else if (s.icon === 'alert' || s.title?.toLowerCase().includes('conflict')) agent = 'conflict';
         else if (s.icon === 'shield' || s.title?.toLowerCase().includes('sufficient')) agent = 'sufficiency';

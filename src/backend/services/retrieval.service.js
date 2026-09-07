@@ -75,7 +75,7 @@ export const retrieveRelevantChunks = async ({
     // 3. Format and score chunks with exact-keyword boosting
     const formattedChunks = (points || []).map((point) => {
       const payload = point.payload || {};
-      const chunkText = payload.text || '';
+      const chunkText = payload.text || payload.chunkText || payload.formattedText || '';
       const textLower = chunkText.toLowerCase();
 
       // Check for exact entity token matches

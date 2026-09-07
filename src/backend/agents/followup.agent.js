@@ -1,5 +1,4 @@
-import { getOllamaBaseUrl } from '../services/ollama.service.js';
-import { getOllamaLlmModel } from '../services/qwen.service.js';
+import { callTextModel } from '../services/ollama.service.js';
 
 /**
  * 5. Follow-up Search Agent (Google ADK Architecture)
@@ -13,9 +12,6 @@ export const runFollowUpSearchAgent = async ({
   previousQueries = [],
   currentRound = 1,
 }) => {
-  const baseUrl = getOllamaBaseUrl();
-  const model = getOllamaLlmModel();
-
   const systemPrompt = `You are the Follow-up Search Agent in TraceMind's iterative reasoning system.
 Your job is to generate a new, highly targeted search query to retrieve the missing information identified by the Sufficiency Agent.
 
@@ -24,6 +20,7 @@ TARGETED SEARCH RULES:
 2. If the missing detail involves credential use vs physical presence, target keywords like "packet replay", "forensic analysis", "network log", or "spoofing".
 3. If the missing detail involves causality or timeline, target exact identifiers, equipment codes, or timestamps.
 4. Do NOT repeat past queries: [${previousQueries.map((q) => `"${q}"`).join(', ')}].
+5. Do NOT include raw database ID hashes or internal IDs in followUpQuery. Keep terms focused on domain and semantic concepts.
 
 Output strict JSON with format:
 {
@@ -37,33 +34,15 @@ Missing Information Identified: "${missingInformation || 'Additional specific re
 Generate the next targeted search query in JSON:`;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.2, num_predict: 256, num_ctx: 2048 },
-      }),
-      signal: controller.signal,
+    const rawContent = await callTextModel({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      format: 'json',
+      temperature: 0.2,
+      timeoutMs: 30000,
     });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Follow-up Search LLM call failed with HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.message?.content || data.response || '{}';
 
     let parsed;
     try {
@@ -95,4 +74,5 @@ Generate the next targeted search query in JSON:`;
 };
 
 export default { runFollowUpSearchAgent };
+
 
