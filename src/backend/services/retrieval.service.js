@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { generateEmbedding } from './ollama.service.js';
 import { searchSimilarChunks } from './qdrant.service.js';
+import { traceRetrievalSpan } from './langsmith.service.js';
 
 dotenv.config();
 
@@ -50,7 +51,11 @@ export const retrieveRelevantChunks = async ({
     // 1. Generate dense vector embedding for user query via RunPod Ollama (Nomic Embed Text)
     console.log(`⚡ [RAG Retrieval] Generating query embedding on RunPod GPU...`);
     const embedStart = Date.now();
-    const queryVector = await generateEmbedding(query.trim());
+    const queryVector = await traceRetrievalSpan(
+      'Query Embedding',
+      async () => await generateEmbedding(query.trim()),
+      { searchQuery: query.trim(), model: 'nomic-embed-text' }
+    );
     const embedDurationMs = Date.now() - embedStart;
 
     if (!queryVector || !Array.isArray(queryVector) || queryVector.length === 0) {
@@ -58,71 +63,89 @@ export const retrieveRelevantChunks = async ({
     }
 
     // 2. Perform scoped semantic search in Qdrant Cloud (fetch broader candidate pool)
-    const searchLimit = Math.max(limit * 2, 16);
+    const searchLimit = Math.max(limit * 6, 64);
     console.log(`🔷 [RAG Retrieval] Searching Qdrant Cloud (Candidate Pool: ${searchLimit})...`);
-    const points = await searchSimilarChunks({
-      userId,
-      documentId: documentId && documentId !== 'all' ? documentId : undefined,
-      queryVector,
-      limit: searchLimit,
-      scoreThreshold,
-    });
+    const qdrantStart = Date.now();
+    const points = await traceRetrievalSpan(
+      'Qdrant Vector Search',
+      async () => await searchSimilarChunks({
+        userId,
+        documentId: documentId && documentId !== 'all' ? documentId : undefined,
+        queryVector,
+        limit: searchLimit,
+        scoreThreshold,
+      }),
+      { candidatePoolSize: searchLimit, documentScope: scopeDisplay, scoreThreshold: scoreThreshold || 0 }
+    );
     const qdrantDurationMs = Date.now() - qdrantStart;
 
 
-    // Extract exact entity tokens (e.g. IT24101071, IE3010, room numbers, codes)
-    const queryTokens = (query.match(/\b[A-Za-z0-9_-]{4,}\b/g) || []).map((t) =>
-      t.toLowerCase()
-    );
+    const topChunks = await traceRetrievalSpan(
+      'Candidate Ranking',
+      async () => {
+        // Extract meaningful entity & domain tokens (filtering common English stopwords)
+        const STOPWORDS = new Set([
+          'state', 'that', 'this', 'what', 'when', 'where', 'which', 'with',
+          'from', 'into', 'true', 'marks', 'precise', 'year', 'about', 'some',
+          'does', 'have', 'been', 'their', 'there', 'they', 'were', 'also'
+        ]);
+        const queryTokens = (query.match(/\\b[A-Za-z0-9_-]{4,}\\b/g) || [])
+          .map((t) => t.toLowerCase())
+          .filter((t) => !STOPWORDS.has(t));
 
-    // 3. Format and score chunks with exact-keyword boosting
-    const formattedChunks = (points || []).map((point) => {
-      const payload = point.payload || {};
-      const chunkText = payload.text || payload.chunkText || payload.formattedText || '';
-      const textLower = chunkText.toLowerCase();
+        // 3. Format and score chunks with exact-keyword boosting
+        const formattedChunks = (points || []).map((point) => {
+          const payload = point.payload || {};
+          const chunkText = payload.text || payload.chunkText || payload.formattedText || '';
+          const textLower = chunkText.toLowerCase();
 
-      // Check for exact entity token matches
-      let exactMatchesCount = 0;
-      for (const token of queryTokens) {
-        if (textLower.includes(token)) {
-          exactMatchesCount++;
-        }
+          let exactMatchesCount = 0;
+          for (const token of queryTokens) {
+            if (textLower.includes(token)) {
+              exactMatchesCount++;
+            }
+          }
+
+          const baseScore =
+            typeof point.score === 'number'
+              ? parseFloat(point.score.toFixed(4))
+              : 0.75;
+          const boostedScore = exactMatchesCount > 0 ? Math.min(1.0, baseScore + 0.25 * exactMatchesCount) : baseScore;
+
+          return {
+            chunkText,
+            fileName: payload.fileName || '',
+            archiveName: payload.archiveName || null,
+            relativePath: payload.relativePath || null,
+            sourceType: payload.sourceType || (payload.isImage ? 'image' : 'document'),
+            isImage: Boolean(payload.isImage),
+            documentId: payload.documentId || '',
+            pageNumber: payload.pageNumber || 1,
+            chunkNumber:
+              payload.chunkNumber ||
+              (payload.chunkIndex !== undefined ? payload.chunkIndex + 1 : 1),
+            similarityScore: parseFloat(boostedScore.toFixed(4)),
+            hasExactMatch: exactMatchesCount > 0,
+            tokenCount: payload.tokenCount || 0,
+            charCount: payload.charCount || chunkText.length,
+            pointId: point.id,
+          };
+        });
+
+        formattedChunks.sort((a, b) => {
+          if (a.hasExactMatch && !b.hasExactMatch) return -1;
+          if (!a.hasExactMatch && b.hasExactMatch) return 1;
+          return (b.similarityScore || 0) - (a.similarityScore || 0);
+        });
+
+        return formattedChunks.slice(0, limit);
+      },
+      {
+        query,
+        candidateCount: points?.length || 0,
+        topKLimit: limit,
       }
-
-      const baseScore =
-        typeof point.score === 'number'
-          ? parseFloat(point.score.toFixed(4))
-          : 0.75;
-      const boostedScore = exactMatchesCount > 0 ? Math.min(1.0, baseScore + 0.25 * exactMatchesCount) : baseScore;
-
-      return {
-        chunkText,
-        fileName: payload.fileName || '',
-        archiveName: payload.archiveName || null,
-        relativePath: payload.relativePath || null,
-        sourceType: payload.sourceType || (payload.isImage ? 'image' : 'document'),
-        isImage: Boolean(payload.isImage),
-        documentId: payload.documentId || '',
-        pageNumber: payload.pageNumber || 1,
-        chunkNumber:
-          payload.chunkNumber ||
-          (payload.chunkIndex !== undefined ? payload.chunkIndex + 1 : 1),
-        similarityScore: parseFloat(boostedScore.toFixed(4)),
-        hasExactMatch: exactMatchesCount > 0,
-        tokenCount: payload.tokenCount || 0,
-        charCount: payload.charCount || chunkText.length,
-        pointId: point.id,
-      };
-    });
-
-    // Prioritize exact keyword matches first, then sort by highest similarity score
-    formattedChunks.sort((a, b) => {
-      if (a.hasExactMatch && !b.hasExactMatch) return -1;
-      if (!a.hasExactMatch && b.hasExactMatch) return 1;
-      return (b.similarityScore || 0) - (a.similarityScore || 0);
-    });
-
-    const topChunks = formattedChunks.slice(0, limit);
+    );
 
     console.log(
       `✅ [RAG Retrieval] Found ${topChunks.length} relevant chunk(s) (${

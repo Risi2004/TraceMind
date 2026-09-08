@@ -371,14 +371,21 @@ export const searchSimilarChunks = async ({
       with_payload: true,
     };
 
-    if (scoreThreshold !== undefined && scoreThreshold !== null) {
+    if (scoreThreshold !== undefined && scoreThreshold !== null && typeof scoreThreshold === 'number' && !isNaN(scoreThreshold)) {
       queryParams.score_threshold = scoreThreshold;
     }
 
     const searchResponse = await client.query(collectionName, queryParams);
     return searchResponse.points || [];
   } catch (error) {
-    console.error(`❌ [Qdrant] Search error:`, error.message);
+    console.error(`❌ [Qdrant] Search error:`, error.message, error.status, JSON.stringify(error.data || error.response?.data || error.message));
+    console.error(`❌ [Qdrant] QueryParams summary:`, {
+      collectionName,
+      filter: JSON.stringify(mustFilters),
+      limit,
+      scoreThreshold,
+      vectorLength: Array.isArray(queryVector) ? queryVector.length : typeof queryVector,
+    });
     throw error;
   }
 

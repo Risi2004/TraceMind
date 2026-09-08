@@ -1,3 +1,4 @@
+import { traceInvestigation, traceAgent } from '../services/langsmith.service.js';
 import { runPlannerAgent } from './planner.agent.js';
 import { runRetrievalAgent } from './retrieval.agent.js';
 import { runVisionAgent, getVisionAgentModel } from './vision.agent.js';
@@ -31,9 +32,13 @@ export const executeAdkInvestigation = async ({
   maxRounds,
   topK,
 }) => {
-  const startTime = Date.now();
   const effectiveMaxRounds = maxRounds || parseInt(process.env.MAX_SEARCH_ROUNDS, 10) || 4;
   const effectiveTopK = topK || parseInt(process.env.RAG_TOP_K, 10) || 8;
+  const documentScope = scopeName || (documentId && documentId !== 'all' ? (Array.isArray(documentId) ? documentId.join(', ') : documentId) : 'all_documents');
+
+  return traceInvestigation(
+    async () => {
+  const startTime = Date.now();
 
   adkLogger.logInvestigationStart({
     question: query,
@@ -48,6 +53,15 @@ export const executeAdkInvestigation = async ({
   const accumulatedChunks = [];
   const accumulatedFacts = [];
   const accumulatedClassifiedClaims = [];
+
+  // Compact Structured Evidence State for cross-agent reuse
+  const structuredEvidenceState = {
+    verifiedFacts: [],
+    inferences: [],
+    conflicts: [],
+    unknowns: [],
+    sources: [],
+  };
   const seenChunkIds = new Set();
   const previousQueries = [];
 
@@ -67,10 +81,17 @@ export const executeAdkInvestigation = async ({
   // -------------------------------------------------------------
   const tPlanner0 = Date.now();
   llmCallCount++;
-  const plan = await runPlannerAgent({
-    question: query,
-    scopeName: scopeName || (documentId && documentId !== 'all' ? 'Target Document Asset' : 'All Documents'),
-  });
+  const plan = await traceAgent(
+    'TraceMind - Planner Agent',
+    () => runPlannerAgent({
+      question: query,
+      scopeName: scopeName || (documentId && documentId !== 'all' ? 'Target Document Asset' : 'All Documents'),
+    }),
+    {
+      round: 1,
+      metadata: { question: query, scopeName },
+    }
+  );
   perfTimeline.push({ label: 'Planner Agent', durationMs: Date.now() - tPlanner0 });
 
   currentSearchQuery = plan.primaryQuery || query;
@@ -112,13 +133,24 @@ export const executeAdkInvestigation = async ({
 
     // 2A. Retrieval Agent (Execute dense search in Qdrant)
     qdrantSearchCount++;
-    const retrievalResult = await runRetrievalAgent({
-      searchQuery: currentSearchQuery,
-      userId,
-      documentId,
-      seenChunkIds,
-      topK: effectiveTopK,
-    });
+    const retrievalResult = await traceAgent(
+      `TraceMind - Retrieval Agent (Round ${currentRound})`,
+      () => runRetrievalAgent({
+        searchQuery: currentSearchQuery,
+        userId,
+        documentId,
+        seenChunkIds,
+        topK: effectiveTopK,
+      }),
+      {
+        round: currentRound,
+        metadata: {
+          searchQuery: currentSearchQuery,
+          retrievalRound: currentRound,
+          documentId: documentId || 'all_documents',
+        },
+      }
+    );
     perfTimeline.push({ label: `Query Embedding #${currentRound}`, durationMs: retrievalResult.embedDurationMs || 0 });
     perfTimeline.push({ label: `Qdrant Search #${currentRound}`, durationMs: retrievalResult.qdrantDurationMs || 0 });
 
@@ -167,13 +199,27 @@ export const executeAdkInvestigation = async ({
     if (imageChunks.length > 0) {
       const tVision0 = Date.now();
       visionCallCount++;
-      const visionResult = await runVisionAgent({
-        visualChunks: imageChunks,
-        fileName: imageChunks[0]?.fileName || 'Visual Evidence',
-        documentId: imageChunks[0]?.documentId || documentId,
-        pageNumber: imageChunks[0]?.pageNumber || 1,
-        question: query,
-      });
+      const visionResult = await traceAgent(
+        `TraceMind - Vision Agent (Round ${currentRound})`,
+        () => runVisionAgent({
+          visualChunks: imageChunks,
+          fileName: imageChunks[0]?.fileName || 'Visual Evidence',
+          documentId: imageChunks[0]?.documentId || documentId,
+          pageNumber: imageChunks[0]?.pageNumber || 1,
+          question: query,
+        }),
+        {
+          round: currentRound,
+          metadata: {
+            fileName: imageChunks[0]?.fileName || 'Visual Evidence',
+            documentId: imageChunks[0]?.documentId || documentId,
+            pageNumber: imageChunks[0]?.pageNumber || 1,
+            visionModel: 'qwen3-vl:8b',
+            visualChunksCount: imageChunks.length,
+            isPreExtracted: true,
+          },
+        }
+      );
 
       investigationSteps.push({
         step: investigationSteps.length + 1,
@@ -212,22 +258,44 @@ export const executeAdkInvestigation = async ({
     llmCallCount += 2;
 
     const tEvid0 = Date.now();
-    const evidPromise = runEvidenceAgent({
-      question: query,
-      newChunks: retrievalResult.newChunks,
-      currentRound,
-    }).then(res => {
+    const evidPromise = traceAgent(
+      `TraceMind - Evidence Agent (Round ${currentRound})`,
+      () => runEvidenceAgent({
+        question: query,
+        newChunks: retrievalResult.newChunks,
+        currentRound,
+      }),
+      {
+        round: currentRound,
+        metadata: {
+          question: query,
+          retrievalRound: currentRound,
+          newChunksCount: retrievalResult.newChunks?.length || 0,
+        },
+      }
+    ).then(res => {
       evidenceDuration = Date.now() - tEvid0;
       return res;
     });
 
     const tConf0 = Date.now();
-    const confPromise = runConflictAgent({
-      question: query,
-      accumulatedChunks,
-      accumulatedFacts,
-      currentRound,
-    }).then(res => {
+    const confPromise = traceAgent(
+      `TraceMind - Conflict Agent (Round ${currentRound})`,
+      () => runConflictAgent({
+        question: query,
+        structuredEvidenceState,
+        accumulatedChunks: accumulatedChunks.slice(0, 6),
+        currentRound,
+      }),
+      {
+        round: currentRound,
+        metadata: {
+          question: query,
+          retrievalRound: currentRound,
+          accumulatedChunksCount: accumulatedChunks.length,
+        },
+      }
+    ).then(res => {
       conflictDuration = Date.now() - tConf0;
       return res;
     });
@@ -240,9 +308,15 @@ export const executeAdkInvestigation = async ({
 
     if (evidenceResult.extractedFacts && evidenceResult.extractedFacts.length > 0) {
       accumulatedFacts.push(...evidenceResult.extractedFacts);
+      structuredEvidenceState.verifiedFacts.push(...evidenceResult.extractedFacts);
     }
     if (evidenceResult.classifiedClaims && evidenceResult.classifiedClaims.length > 0) {
       accumulatedClassifiedClaims.push(...evidenceResult.classifiedClaims);
+      for (const claim of evidenceResult.classifiedClaims) {
+        if (claim.level === 'VERIFIED FACT') structuredEvidenceState.verifiedFacts.push(`${claim.claim} (${claim.source || 'Source'})`);
+        else if (claim.level && claim.level.includes('INFERENCE')) structuredEvidenceState.inferences.push(`${claim.claim} (${claim.source || 'Source'})`);
+        else if (claim.level && claim.level.includes('UNKNOWN')) structuredEvidenceState.unknowns.push(claim.claim);
+      }
     }
 
     const claimsCount = evidenceResult.classifiedClaims?.length || 0;
@@ -316,14 +390,33 @@ export const executeAdkInvestigation = async ({
     // 2D. Sufficiency Agent (Evaluate completeness & conflict resolution)
     const tSuff0 = Date.now();
     llmCallCount++;
-    sufficiencyStatus = await runSufficiencyAgent({
-      question: query,
-      accumulatedFacts,
-      accumulatedChunks,
-      classifiedClaims: accumulatedClassifiedClaims,
-      conflictReport,
-      currentRound,
-    });
+    const hasDirectAnswer = Boolean(evidenceResult.hasDirectAnswer && evidenceResult.directAnswerFact);
+    const hasVerifiedClaim = accumulatedClassifiedClaims.some(c => c.level === 'VERIFIED FACT' && c.source);
+    const noUnresolvedConflict = !conflictReport.hasConflict || conflictReport.resolution === 'resolved';
+    const satisfiesEarlyExit = currentRound === 1 && hasDirectAnswer && hasVerifiedClaim && noUnresolvedConflict;
+
+    sufficiencyStatus = await traceAgent(
+      `TraceMind - Sufficiency Agent (Round ${currentRound})`,
+      () => runSufficiencyAgent({
+        question: query,
+        structuredEvidenceState,
+        accumulatedFacts,
+        classifiedClaims: accumulatedClassifiedClaims,
+        conflictReport,
+        hasDirectVerifiedAnswer: satisfiesEarlyExit,
+        currentRound,
+      }),
+      {
+        round: currentRound,
+        metadata: {
+          question: query,
+          retrievalRound: currentRound,
+          factsCount: accumulatedFacts.length,
+          claimsCount: accumulatedClassifiedClaims.length,
+          hasConflict: Boolean(conflictReport?.hasConflict),
+        },
+      }
+    );
 
     perfTimeline.push({ label: `Sufficiency Agent #${currentRound}`, durationMs: Date.now() - tSuff0 });
     adkLogger.logSufficiencyEvaluation({
@@ -372,12 +465,23 @@ export const executeAdkInvestigation = async ({
       // 2E. Follow-up Search Agent (Formulate next targeted query)
       const tFollow0 = Date.now();
       llmCallCount++;
-      const followUpResult = await runFollowUpSearchAgent({
-        question: query,
-        missingInformation: sufficiencyStatus.missingInformation,
-        previousQueries,
-        currentRound,
-      });
+      const followUpResult = await traceAgent(
+        `TraceMind - Follow-up Agent (Round ${currentRound})`,
+        () => runFollowUpSearchAgent({
+          question: query,
+          missingInformation: sufficiencyStatus.missingInformation,
+          previousQueries,
+          currentRound,
+        }),
+        {
+          round: currentRound,
+          metadata: {
+            question: query,
+            retrievalRound: currentRound,
+            missingInformation: sufficiencyStatus.missingInformation,
+          },
+        }
+      );
 
       perfTimeline.push({ label: `Follow-up Agent #${currentRound}`, durationMs: Date.now() - tFollow0 });
       currentSearchQuery = followUpResult.followUpQuery;
@@ -423,14 +527,27 @@ export const executeAdkInvestigation = async ({
   // -------------------------------------------------------------
   const tAnswer0 = Date.now();
   llmCallCount++;
-  const answerResult = await runAnswerAgent({
-    question: query,
-    accumulatedChunks,
-    accumulatedFacts,
-    classifiedClaims: accumulatedClassifiedClaims,
-    conflictReport,
-    chatHistory,
-  });
+  const answerResult = await traceAgent(
+    'TraceMind - Answer Agent',
+    () => runAnswerAgent({
+      question: query,
+      accumulatedChunks,
+      accumulatedFacts,
+      classifiedClaims: accumulatedClassifiedClaims,
+      conflictReport,
+      chatHistory,
+    }),
+    {
+      round: currentRound,
+      metadata: {
+        question: query,
+        totalRounds: currentRound,
+        accumulatedChunksCount: accumulatedChunks.length,
+        accumulatedFactsCount: accumulatedFacts.length,
+        hasConflict: Boolean(conflictReport?.hasConflict),
+      },
+    }
+  );
 
   const tAnswerDuration = Date.now() - tAnswer0;
   perfTimeline.push({ label: 'Answer Agent', durationMs: tAnswerDuration });
@@ -536,6 +653,15 @@ export const executeAdkInvestigation = async ({
     model: 'TraceMind AI Engine',
     timestamp: new Date().toISOString(),
   };
+    },
+    {
+      question: query,
+      userId,
+      documentScope,
+      maxRounds: effectiveMaxRounds,
+      topK: effectiveTopK,
+    }
+  );
 };
 
 export default {

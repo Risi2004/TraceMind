@@ -58,6 +58,11 @@ const documentSchema = new mongoose.Schema(
       required: true,
       default: 'tracemind-documents',
     },
+    sha256Hash: {
+      type: String,
+      default: null,
+      index: true,
+    },
     status: {
       type: String,
       enum: ['uploaded', 'processing', 'analyzing', 'indexed', 'ready', 'failed'],
@@ -130,6 +135,8 @@ documentSchema.statics.detectFileType = function (filename) {
       return { fileType: 'OTHER', extension: ext };
   }
 };
+
+documentSchema.index({ userId: 1, sha256Hash: 1 });
 
 const Document = mongoose.model('Document', documentSchema);
 

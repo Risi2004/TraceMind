@@ -6,8 +6,7 @@ import {
   CopyIcon,
   CheckIcon,
   FileTextIcon,
-  ActivityIcon,
-  NetworkIcon
+  ActivityIcon
 } from '../common/Icons';
 import { SourcesSection } from './SourcesSection';
 import { MOCK_SUGGESTIONS, MOCK_CITATIONS_DATABASE } from '../../mock/chatMockData';
@@ -20,7 +19,6 @@ export const MessageList = ({
   onSelectSuggestion,
   onOpenSourcePreview,
   onOpenInvestigation,
-  onOpenAgentFlow,
   showCitations = true,
   showConfidence = true
 }) => {
@@ -230,15 +228,7 @@ export const MessageList = ({
                     <span>View Investigation</span>
                   </button>
 
-                  <button
-                    type="button"
-                    className="action-btn text-cyan view-agent-flow-btn"
-                    onClick={() => onOpenAgentFlow && onOpenAgentFlow(msg)}
-                    title="View 3D Interactive Agent Execution Flow"
-                  >
-                    <NetworkIcon size={13} />
-                    <span>View Agent Flow</span>
-                  </button>
+                  
                 </div>
               )}
 

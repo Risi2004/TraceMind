@@ -1,83 +1,94 @@
 import { callTextModel } from '../services/ollama.service.js';
 
 /**
- * Source Reliability and Conflict Agent (Google ADK Architecture)
+ * Source Reliability and Conflict Agent (Google ADK Architecture - High Performance)
  * Responsibilities:
  * 1. Cross-examine claims and evidence coming from different documents / passages.
- * 2. Strict Conflict Definition:
- *    - A missing detail is NOT automatically a conflict.
- *    - Different descriptions or complementary angles are NOT automatically contradictions.
- *    - Only report a conflict when two pieces of evidence make genuinely incompatible claims.
- * 3. Apply Evidence Hierarchy:
- *    - Physical maintenance records & tested forensic analysis > provisional witness impressions / digital signal assumptions.
- *    - Later retractions / corrected witness statements > initial unverified impressions.
- *    - Subsequent forensic testing > initial provisional incident classifications.
- * 4. Resolve apparent conflicts cleanly rather than declaring false inconclusiveness when stronger evidence resolves them.
+ * 2. Strict Entity Resolution:
+ *    - EXACT ENTITY MATCH: Both claims must refer to the exact same entity name to conflict.
+ *    - SPELLING SIMILARITY IS NOT ENOUGH: Never assume entities are identical because names look or sound similar.
+ *    - EXPLICIT ALIAS EVIDENCE: Different names may only be treated as the same entity if retrieved text explicitly states so.
+ *    - NO INVENTED TYPOS: Never assume a name is a typo or spelling variant without explicit textual evidence.
+ *    - ENTITY UNCERTAINTY: If equivalence is unclear, classify as ENTITY_UNCERTAIN with hasConflict: false.
+ * 3. Strict Conflict Definition:
+ *    - A missing detail or complementary angle is NOT a contradiction.
+ *    - Only report a conflict when two sources make genuinely incompatible factual claims about the same entity.
+ * 4. Apply Evidence Hierarchy:
+ *    - Physical maintenance logs & tested forensics > witness impressions or digital signal assumptions.
+ *    - Formal witness retractions / corrections > initial unverified impressions.
+ *    - Subsequent forensic testing > initial provisional classifications.
  */
 
 export const runConflictAgent = async ({
   question,
+  structuredEvidenceState = null,
   accumulatedChunks = [],
-  accumulatedFacts = [],
   currentRound = 1,
 }) => {
-  if (!accumulatedChunks || accumulatedChunks.length < 2) {
+  // Prune passages to top unique document sources to prevent prompt bloat
+  const candidateChunks = (accumulatedChunks || []).slice(0, 6);
+
+  if (candidateChunks.length < 2 && (!structuredEvidenceState || structuredEvidenceState.verifiedFacts?.length < 2)) {
     return {
       hasConflict: false,
+      entityStatus: 'not_applicable',
       conflictType: 'none',
       conflictingSources: [],
-      assessment: 'Single source or insufficient passages to compare for cross-document conflicts.',
+      assessment: 'Passages cross-examined with no contradictions.',
       resolution: 'no_conflict',
+      resolvedFinding: null,
+      conflictCount: 0,
+      entityMismatchCount: 0,
+      entityUncertainCount: 0,
     };
   }
 
-  const uniqueDocNames = [...new Set(accumulatedChunks.map((c) => c.fileName || 'Unknown Doc'))];
-
-  const passagesSummary = accumulatedChunks
+  const passagesSummary = candidateChunks
     .map(
       (c, i) =>
-        `[Source ${i + 1}] Document: "${c.fileName || 'Doc'}" (${
-          c.isImage || c.sourceType === 'image' ? 'Image Evidence' : `Page ${c.pageNumber || 1}`
-        })\nContent: ${c.chunkText.slice(0, 500)}`
+        `[Source ${i + 1}] "${c.fileName || 'Doc'}" (${
+          c.isImage || c.sourceType === 'image' ? 'Image' : `Page ${c.pageNumber || 1}`
+        }): ${(c.chunkText || '').slice(0, 350)}`
     )
     .join('\n\n');
 
-  const systemPrompt = `You are the Lead Source Reliability and Conflict Analysis Agent in TraceMind's reasoning system.
-Your job is to compare evidence across different documents or distinct passages to detect genuine disagreements, contradictions, or competing accounts.
+  const systemPrompt = `You are the Lead Conflict Analysis Agent in TraceMind.
+Cross-examine evidence across different documents.
 
-STRICT CONFLICT EVALUATION RULES:
-1. WHAT IS NOT A CONFLICT:
-   - A missing detail in one source that is present in another is NOT a conflict.
-   - Different or complementary descriptions of the same scene/object are NOT contradictions.
-   - Different parts of an image or document describing different aspects (e.g. map route vs manifest items) are NOT conflicts.
-2. WHAT IS A CONFLICT:
-   - Only flag a conflict when two distinct pieces of evidence make genuinely incompatible, contradictory factual assertions (e.g., Doc A says "Delivered on May 10" while Doc B says "Never delivered"; or Doc A says "Officer Smith was in room" while forensic badge log proves "Smith was offsite").
-3. EVIDENCE HIERARCHY FOR RESOLUTION:
-   - Prefer physical verification, tested forensic evidence, and signed maintenance logs over witness guesses, transponder assumptions, or provisional impressions.
-   - Prefer subsequent witness retractions or formal corrections over initial unverified impressions.
-   - Prefer subsequent forensic test results over initial provisional logging.
-4. DO NOT PREMATURELY DECLARE INCONCLUSIVE:
-   - If higher-order evidence (e.g. physical logs, forensics) resolves the apparent disagreement, explain the resolution.
+STRICT ENTITY RESOLUTION RULES (CRITICAL):
+1. EXACT ENTITY MATCH: Two claims may ONLY be compared for conflict if both claims explicitly refer to the EXACT SAME entity name (e.g., "Gloamreach" vs "Gloamreach").
+2. SPELLING SIMILARITY IS NOT ENOUGH: Never assume two entities are identical merely because their names look similar, sound similar, or share prefixes/suffixes (e.g., "Gloamreach" vs "Gloammarch" are DIFFERENT entities -> NO CONFLICT).
+3. EXPLICIT ALIAS EVIDENCE REQUIRED: Different names may be treated as the same entity ONLY when retrieved evidence explicitly states that relationship (e.g., "Gloammarch, formerly known as Gloamreach" or "Gloammarch is another name for Gloamreach").
+4. NO INVENTED TYPOS: NEVER assume a name is a typo, spelling variant, or alternate spelling without explicit textual evidence. Do not silently normalize proper nouns.
+5. ENTITY UNCERTAINTY: If it is unclear whether two different names refer to the same entity, classify entityStatus as "ENTITY_UNCERTAIN" and hasConflict as false.
+6. TRUE CONFLICT DEFINITION: A conflict exists ONLY when:
+   - Both claims concern the exact same verified entity (or verified alias),
+   - Both claims concern the same attribute or event,
+   - And their factual values cannot simultaneously be true.
 
-Output strict JSON with format:
+STRICT CONFLICT RULES:
+1. WHAT IS NOT A CONFLICT: Missing details, complementary descriptions, or claims about different entities are NOT contradictions.
+2. EVIDENCE HIERARCHY: Physical maintenance records/tested forensics > witness impressions/transponder signals; retractions > unverified impressions.
+
+OUTPUT STRICT CONCISE JSON:
 {
   "hasConflict": true or false,
+  "entityStatus": "EXACT_MATCH" | "EXPLICIT_ALIAS" | "DIFFERENT_ENTITIES" | "ENTITY_UNCERTAIN",
   "conflictType": "genuine_contradiction" | "physical_vs_signal" | "initial_vs_forensic" | "witness_retraction" | "none",
   "conflictingSources": [
-    { "document": "Doc A", "page": 1, "claim": "...", "reliability": "..." }
+    { "document": "Doc Name", "page": 1, "claim": "...", "entity": "...", "reliability": "..." }
   ],
-  "assessment": "Clear summary of the disagreement and resolution (or 'Evidence across reviewed passages is consistent').",
+  "assessment": "1 sentence conflict evaluation",
   "resolution": "resolved" | "unresolved" | "no_conflict",
-  "resolvedFinding": "The definitive factual takeaway after applying the evidence hierarchy (or null if no conflict or unresolved)."
+  "resolvedFinding": "Definitive takeaway applying evidence hierarchy (or null)"
 }`;
 
   const userPrompt = `User Question: "${question}"
-Distinct Documents Examined: [${uniqueDocNames.join(', ')}]
 
 RETRIEVED PASSAGES TO CROSS-EXAMINE:
 ${passagesSummary}
 
-Analyze genuine contradictions and resolution in JSON:`;
+Evaluate cross-document conflicts in strict JSON:`;
 
   try {
     const rawContent = await callTextModel({
@@ -87,7 +98,7 @@ Analyze genuine contradictions and resolution in JSON:`;
       ],
       format: 'json',
       temperature: 0.1,
-      timeoutMs: 30000,
+      timeoutMs: 25000,
     });
 
     let parsed;
@@ -97,30 +108,48 @@ Analyze genuine contradictions and resolution in JSON:`;
     } catch {
       parsed = {
         hasConflict: false,
+        entityStatus: 'not_applicable',
         conflictType: 'none',
         conflictingSources: [],
-        assessment: 'Passages cross-examined with no unresolvable contradictions.',
+        assessment: 'Passages cross-examined with no contradictions.',
         resolution: 'no_conflict',
+        resolvedFinding: null,
       };
     }
 
+    const entityStatus = parsed.entityStatus || (parsed.hasConflict ? 'EXACT_MATCH' : 'DIFFERENT_ENTITIES');
+    let hasConflict = Boolean(parsed.hasConflict);
+
+    // Guard: If entities are different or entity equivalence is uncertain, there is NO conflict
+    if (entityStatus === 'ENTITY_UNCERTAIN' || entityStatus === 'DIFFERENT_ENTITIES') {
+      hasConflict = false;
+    }
+
     return {
-      hasConflict: Boolean(parsed.hasConflict),
-      conflictType: parsed.conflictType || 'none',
-      conflictingSources: parsed.conflictingSources || [],
+      hasConflict,
+      entityStatus,
+      conflictType: hasConflict ? (parsed.conflictType || 'genuine_contradiction') : 'none',
+      conflictingSources: hasConflict ? (parsed.conflictingSources || []) : [],
       assessment: parsed.assessment || 'Cross-document evaluation complete.',
-      resolution: parsed.resolution || (parsed.hasConflict ? 'unresolved' : 'no_conflict'),
+      resolution: hasConflict ? (parsed.resolution || 'unresolved') : 'no_conflict',
       resolvedFinding: parsed.resolvedFinding || null,
+      conflictCount: hasConflict ? 1 : 0,
+      entityMismatchCount: entityStatus === 'DIFFERENT_ENTITIES' ? 1 : 0,
+      entityUncertainCount: entityStatus === 'ENTITY_UNCERTAIN' ? 1 : 0,
     };
   } catch (err) {
     console.warn(`[Conflict Agent Notice]: ${err.message}`);
     return {
       hasConflict: false,
+      entityStatus: 'not_applicable',
       conflictType: 'none',
       conflictingSources: [],
       assessment: 'Conflict check completed via direct source synthesis.',
       resolution: 'no_conflict',
       resolvedFinding: null,
+      conflictCount: 0,
+      entityMismatchCount: 0,
+      entityUncertainCount: 0,
     };
   }
 };

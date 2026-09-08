@@ -24,8 +24,8 @@ TARGETED SEARCH RULES:
 
 Output strict JSON with format:
 {
-  "followUpQuery": "Concise search phrase to query Qdrant Cloud",
-  "searchRationale": "1 short sentence explaining what this query is retrieving"
+  "followUpQuery": "Concise keyword search phrase",
+  "searchRationale": "1 short sentence"
 }`;
 
   const userPrompt = `Original Question: "${question}"

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import path from 'path';
 import Document from '../models/Document.js';
@@ -22,6 +23,27 @@ const ALLOWED_EXTENSIONS = [
   ...SUPPORTED_EXTENSIONS.IMAGES,
 ];
 const ZIP_EXTENSIONS = ['zip'];
+
+/**
+ * Controlled Concurrency Worker Pool
+ */
+async function runWorkerPool(items, concurrency, workerFn) {
+  const results = new Array(items.length);
+  let index = 0;
+  const workers = new Array(Math.min(concurrency, items.length)).fill(0).map(async () => {
+    while (index < items.length) {
+      const i = index++;
+      try {
+        results[i] = await workerFn(items[i], i);
+      } catch (err) {
+        results[i] = { error: err };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 
 /**
  * Sanitize filename for storage (safe characters only)
@@ -92,35 +114,50 @@ export const uploadDocuments = async (req, res) => {
             });
           }
 
-          // Ingest each valid extracted document/image independently
-          for (const extractedFile of extractionResult.files) {
+          // Ingest each valid extracted document/image with controlled concurrency & SHA-256 deduplication
+          const R2_UPLOAD_CONCURRENCY = parseInt(process.env.R2_UPLOAD_CONCURRENCY || '8', 10);
+          
+          await runWorkerPool(extractionResult.files, R2_UPLOAD_CONCURRENCY, async (extractedFile) => {
             try {
-              const docId = new mongoose.Types.ObjectId();
               const cleanFilename = extractedFile.cleanFilename;
-              const r2Key = `users/${userId}/documents/${docId}/${cleanFilename}`;
+              const fileHash = crypto.createHash('sha256').update(extractedFile.buffer).digest('hex');
 
-              // 1. Upload uncompressed buffer to Cloudflare R2
+              // SHA-256 Deduplication: Check if identical ready document already exists for user
+              const existingDoc = await Document.findOne({
+                userId,
+                sha256Hash: fileHash,
+                status: 'ready',
+              }).lean();
+
+              const docId = new mongoose.Types.ObjectId();
+              const r2Key = existingDoc
+                ? existingDoc.r2Key
+                : `users/${userId}/documents/${docId}/${cleanFilename}`;
+
               const tR2Start = Date.now();
-              await uploadBufferToR2({
-                key: r2Key,
-                buffer: extractedFile.buffer,
-                contentType: extractedFile.mimeType,
-                metadata: {
-                  userId: userId.toString(),
-                  documentId: docId.toString(),
-                  originalName: extractedFile.originalFileName,
-                  parentZip: originalName,
-                  relativePath: extractedFile.relativePath,
-                },
-              });
+              if (!existingDoc) {
+                // Upload buffer to Cloudflare R2 only if new
+                await uploadBufferToR2({
+                  key: r2Key,
+                  buffer: extractedFile.buffer,
+                  contentType: extractedFile.mimeType,
+                  metadata: {
+                    userId: userId.toString(),
+                    documentId: docId.toString(),
+                    originalName: extractedFile.originalFileName,
+                    parentZip: originalName,
+                    relativePath: extractedFile.relativePath,
+                  },
+                });
+              }
+              const r2DurationMs = existingDoc ? 0 : (Date.now() - tR2Start);
 
-              const r2DurationMs = Date.now() - tR2Start;
-              // 2. Save Document Record in MongoDB (starts in 'uploaded' state)
-              const tMongoStart = Date.now();
+              // Create Document record in MongoDB
               const title = extractedFile.originalFileName
                 .replace(/\.[^/.]+$/, '')
                 .replace(/[-_]/g, ' ');
 
+              const tMongoStart = Date.now();
               const docRecord = await Document.create({
                 _id: docId,
                 userId,
@@ -133,18 +170,20 @@ export const uploadDocuments = async (req, res) => {
                 sizeBytes: extractedFile.sizeBytes,
                 sizeFormatted: Document.formatFileSize(extractedFile.sizeBytes),
                 r2Key,
-                status: 'uploaded',
+                sha256Hash: fileHash,
+                status: existingDoc ? 'ready' : 'uploaded',
                 source: 'zip_extract',
                 parentZipName: originalName,
                 collectionName: 'general',
-                metadata: {
+                metadata: existingDoc?.metadata || {
                   archiveName: originalName,
                   relativePath: extractedFile.relativePath,
                   extractedAt: new Date().toISOString(),
+                  deduplicated: Boolean(existingDoc),
                 },
               });
-
               const mongoDurationMs = Date.now() - tMongoStart;
+
               extractedFile._timings = { r2Ms: r2DurationMs, mongoMs: mongoDurationMs };
               savedDocuments.push(docRecord);
               archiveManifest.processed++;
@@ -158,20 +197,23 @@ export const uploadDocuments = async (req, res) => {
                 mimeType: extractedFile.mimeType,
                 sizeBytes: extractedFile.sizeBytes,
                 status: 'processed',
+                deduplicated: Boolean(existingDoc),
               });
 
-              // 3. Enqueue for independent RAG processing
-              ragProcessingQueue.push({
-                documentId: docId,
-                userId,
-                buffer: extractedFile.buffer,
-                filename: cleanFilename,
-                originalName: extractedFile.originalFileName,
-                fileType: extractedFile.fileType,
-                mimeType: extractedFile.mimeType,
-                parentZipName: originalName,
-                relativePath: extractedFile.relativePath,
-              });
+              // If new, enqueue for RAG indexing
+              if (!existingDoc) {
+                ragProcessingQueue.push({
+                  documentId: docId,
+                  userId,
+                  buffer: extractedFile.buffer,
+                  filename: cleanFilename,
+                  originalName: extractedFile.originalFileName,
+                  fileType: extractedFile.fileType,
+                  mimeType: extractedFile.mimeType,
+                  parentZipName: originalName,
+                  relativePath: extractedFile.relativePath,
+                });
+              }
             } catch (fileIngestErr) {
               console.error(`[ZIP Ingestion] Failed to ingest extracted file "${extractedFile.relativePath}":`, fileIngestErr);
               archiveManifest.failed++;
@@ -182,9 +224,8 @@ export const uploadDocuments = async (req, res) => {
                 error: fileIngestErr.message,
               });
             }
-          }
+          });
 
-          archiveManifest._zipExtractMs = zipExtractMs || 0;
           archiveResults.push(archiveManifest);
 
           if (archiveManifest.processed === 0 && archiveManifest.failed > 0) {
@@ -291,10 +332,11 @@ export const uploadDocuments = async (req, res) => {
       });
     }
 
-    // Trigger async RAG processing pipeline for all uploaded documents in background with diagnostic performance logging
+    // Trigger async RAG processing pipeline with prioritized concurrency & worker pools
     if (ragProcessingQueue.length > 0) {
       (async () => {
         const ingStart = Date.now();
+        const RAG_INGESTION_CONCURRENCY = parseInt(process.env.RAG_INGESTION_CONCURRENCY || '4', 10);
         let totalZipExtractMs = archiveResults.reduce((acc, a) => acc + (a._zipExtractMs || 0), 0);
         let totalDocExtractMs = 0;
         let totalVisionMs = 0;
@@ -307,27 +349,51 @@ export const uploadDocuments = async (req, res) => {
         let totalEmbedRequests = 0;
         let totalVisionRequests = 0;
 
-        for (const item of ragProcessingQueue) {
+        // Separate Priority 1: Text Documents (PDF, DOCX, TXT, MD) vs Priority 2: Visual Assets (IMAGE)
+        const textQueue = ragProcessingQueue.filter((item) => item.fileType !== 'IMAGE' && !/\.(png|jpe?g|webp)$/i.test(item.filename));
+        const visionQueue = ragProcessingQueue.filter((item) => item.fileType === 'IMAGE' || /\.(png|jpe?g|webp)$/i.test(item.filename));
+
+        console.log(`\n[RAG Ingestion Pool] Starting concurrent processing for ${textQueue.length} text document(s) (Concurrency: ${RAG_INGESTION_CONCURRENCY}) and ${visionQueue.length} visual asset(s)...\n`);
+
+        // Phase 1: Process text documents with worker pool so corpus becomes searchable immediately!
+        await runWorkerPool(textQueue, RAG_INGESTION_CONCURRENCY, async (item) => {
           try {
             const ragRes = await processDocumentForRag(item);
             if (ragRes && ragRes.timings) {
-              if (ragRes.timings.isImage) {
-                totalVisionMs += ragRes.timings.extractionMs;
-                totalVisionRequests++;
-              } else {
-                totalDocExtractMs += ragRes.timings.extractionMs;
-              }
+              totalDocExtractMs += ragRes.timings.extractionMs;
               totalChunkingMs += ragRes.timings.chunkingMs;
               totalEmbeddingMs += ragRes.timings.embeddingMs;
               totalQdrantMs += ragRes.timings.qdrantMs;
               totalMongoMs += ragRes.timings.mongoMs;
               totalChunks += ragRes.timings.chunksCount || 0;
-              totalEmbedRequests += Math.ceil((ragRes.timings.chunksCount || 1) / 4);
+              totalEmbedRequests += Math.ceil((ragRes.timings.chunksCount || 1) / 16);
             }
           } catch (ragErr) {
-            console.error(`Background RAG processing failed for ${item.filename}:`, ragErr);
+            console.error(`Background RAG text processing failed for ${item.filename}:`, ragErr.message);
           }
-        }
+        });
+
+        console.log(`\n[RAG Ingestion Pool] All ${textQueue.length} text documents are READY and searchable in Qdrant! Now indexing visual assets...\n`);
+
+        // Phase 2: Process visual assets with controlled concurrency (e.g. 1-2 to preserve GPU VRAM)
+        const VISION_CONCURRENCY = parseInt(process.env.VISION_CONCURRENCY_LIMIT || '2', 10);
+        await runWorkerPool(visionQueue, VISION_CONCURRENCY, async (item) => {
+          try {
+            const ragRes = await processDocumentForRag(item);
+            if (ragRes && ragRes.timings) {
+              totalVisionMs += ragRes.timings.extractionMs;
+              totalVisionRequests++;
+              totalChunkingMs += ragRes.timings.chunkingMs;
+              totalEmbeddingMs += ragRes.timings.embeddingMs;
+              totalQdrantMs += ragRes.timings.qdrantMs;
+              totalMongoMs += ragRes.timings.mongoMs;
+              totalChunks += ragRes.timings.chunksCount || 0;
+              totalEmbedRequests += Math.ceil((ragRes.timings.chunksCount || 1) / 16);
+            }
+          } catch (ragErr) {
+            console.error(`Background RAG vision processing failed for ${item.filename}:`, ragErr.message);
+          }
+        });
 
         const totalIngMs = Date.now() - ingStart + totalZipExtractMs + totalR2Ms;
         console.log('\n========== INGESTION PERFORMANCE ==========');

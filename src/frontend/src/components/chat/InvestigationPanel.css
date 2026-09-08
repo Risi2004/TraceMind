@@ -79,37 +79,6 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* 3D Agent Flow Launch Action Bar */
-.investigation-flow-action-bar {
-  padding: 0.65rem 1rem;
-  background: rgba(56, 189, 248, 0.04);
-  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
-}
-
-.launch-3d-flow-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(37, 99, 235, 0.15));
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  color: #38bdf8;
-  font-size: 0.775rem;
-  font-weight: 600;
-  padding: 0.5rem 0.85rem;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.launch-3d-flow-btn:hover {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(37, 99, 235, 0.3));
-  border-color: #38bdf8;
-  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
-  transform: translateY(-1px);
-}
-
 /* Summary Bar */
 .investigation-summary-bar {
   display: grid;
