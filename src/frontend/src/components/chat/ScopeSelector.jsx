@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { LayersIcon, ChevronDownIcon, FileTextIcon, FolderIcon, CheckIcon } from '../common/Icons';
-import { MOCK_COLLECTIONS } from '../../mock/chatMockData';
 import './ScopeSelector.css';
 
 export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) => {
@@ -26,6 +25,18 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
     return currentScope === docId;
   };
 
+  // Group real uploaded documents by ZIP archive if applicable
+  const archiveMap = new Map();
+  for (const doc of documents || []) {
+    const zipName = doc.parentZipName || (doc.metadata && (doc.metadata.parentZip || doc.metadata.parentZipName));
+    if (zipName) {
+      if (!archiveMap.has(zipName)) {
+        archiveMap.set(zipName, []);
+      }
+      archiveMap.get(zipName).push(doc._id || doc.id);
+    }
+  }
+
   const getActiveLabel = () => {
     if (!currentScope) {
       return 'Select Document Scope';
@@ -39,10 +50,14 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
         const doc = documents.find((d) => (d._id || d.id) === currentScope[0]);
         return doc ? doc.title || doc.filename : '1 Document Selected';
       }
+      // Check if currentScope matches an archive
+      for (const [zipName, docIds] of archiveMap.entries()) {
+        if (docIds.length === currentScope.length && docIds.every((id) => currentScope.includes(id))) {
+          return `${zipName} (${docIds.length} files)`;
+        }
+      }
       return `${currentScope.length} Documents Selected`;
     }
-    const collection = MOCK_COLLECTIONS.find((c) => c.id === currentScope);
-    if (collection) return collection.name;
     const doc = (documents || []).find((d) => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Selected Document';
     return 'Select Document Scope';
@@ -62,7 +77,7 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
       } else {
         onSelectScope([...currentScope, docId]);
       }
-    } else if (currentScope && currentScope !== 'all' && !MOCK_COLLECTIONS.some((c) => c.id === currentScope)) {
+    } else if (currentScope && currentScope !== 'all') {
       // Switch from single to multi if clicked another doc
       if (currentScope === docId) {
         onSelectScope(null);
@@ -105,22 +120,31 @@ export const ScopeSelector = ({ currentScope, onSelectScope, documents = [] }) =
             </button>
           </div>
 
-          <div className="scope-dropdown-section">
-            <span className="scope-section-title">Collections</span>
-            {MOCK_COLLECTIONS.map((col) => (
-              <button
-                key={col.id}
-                type="button"
-                className={`scope-menu-item ${currentScope === col.id ? 'selected' : ''}`}
-                onClick={() => handleSelect(col.id)}
-                role="menuitem"
-              >
-                <FolderIcon size={15} />
-                <span className="item-name">{col.name}</span>
-                {currentScope === col.id && <CheckIcon size={14} className="check-icon" />}
-              </button>
-            ))}
-          </div>
+          {archiveMap.size > 0 && (
+            <div className="scope-dropdown-section">
+              <span className="scope-section-title">Archives (ZIP)</span>
+              {Array.from(archiveMap.entries()).map(([archiveName, docIds]) => {
+                const isArchiveSelected =
+                  Array.isArray(currentScope) &&
+                  docIds.length === currentScope.length &&
+                  docIds.every((id) => currentScope.includes(id));
+                return (
+                  <button
+                    key={archiveName}
+                    type="button"
+                    className={`scope-menu-item ${isArchiveSelected ? 'selected' : ''}`}
+                    onClick={() => handleSelect(docIds)}
+                    role="menuitem"
+                  >
+                    <FolderIcon size={15} className="text-purple" />
+                    <span className="item-name">{archiveName}</span>
+                    <span className="item-count">({docIds.length} files)</span>
+                    {isArchiveSelected && <CheckIcon size={14} className="check-icon" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {documents && documents.length > 0 && (
             <div className="scope-dropdown-section">

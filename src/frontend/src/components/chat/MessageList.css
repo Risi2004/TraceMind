@@ -446,21 +446,6 @@
   text-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
 }
 
-.view-agent-flow-btn {
-  background: rgba(56, 189, 248, 0.08);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  padding: 0.2rem 0.55rem;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-}
-
-.view-agent-flow-btn:hover {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: rgba(56, 189, 248, 0.5);
-  transform: translateY(-1px);
-}
-
-
 /* Investigation Loading Indicator */
 .investigation-loading-card {
   display: flex;

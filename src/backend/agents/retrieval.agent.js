@@ -40,6 +40,8 @@ export const runRetrievalAgent = async ({
     totalFound: rawChunks.length,
     newChunks,
     seenChunkIds,
+    embedDurationMs: result.embedDurationMs || 0,
+    qdrantDurationMs: result.qdrantDurationMs || 0,
   };
 };
 

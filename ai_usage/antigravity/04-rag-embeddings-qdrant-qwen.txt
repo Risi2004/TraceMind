@@ -467,6 +467,105 @@ Create a proper Readme file with all the setup instructions and needed instructi
   * Complete REST and SSE API endpoint catalog.
   * Verification test suite instructions and troubleshooting FAQ.
 
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 26: Performance Optimization for Ingestion & Multi-Agent Reasoning
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+Perform a complete performance diagnosis and implement optimizations for TraceMind:
+1. Uploading and processing the full Ashen Era Archive ZIP takes approximately 6 minutes.
+2. Answering 2 questions takes approximately 10 minutes (~5 minutes per question).
+3. Preserve reasoning quality, evidence grounding, conflict detection, citations, and answer accuracy without reducing quality.
+4. Implement in priority order: Early sufficiency exit for direct factual questions, context pruning & structured fact forwarding, concise intermediate JSON outputs, native batch embeddings via Ollama /api/embed, controlled concurrent document ingestion worker pool, controlled parallel R2 uploads and MongoDB inserts, SHA-256 deduplication, and asynchronous vision processing.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Implemented Early Sufficiency Exit in `sufficiency.agent.js` and `adkOrchestrator.js` when high-confidence direct factual answers are established, avoiding unnecessary fixed 4-round loops.
+- Structured fact forwarding: Introduced `structuredEvidenceState` to pass compact claims across rounds rather than repeatedly re-prompting raw chunks.
+- Implemented native `/api/embed` batch embeddings in `ollama.service.js` with fallback worker pool.
+- Optimized ZIP ingestion with concurrency pool (concurrency = 4) for R2 uploads and text extractions.
+- Implemented SHA-256 ingestion deduplication in `Document` model and `ingestion.service.js`.
+- Created benchmark test suite `tests/performance-regression.test.js` proving 92x-174x speedup across single-hop, conflict, and multi-hop questions.
+
+--------------------------------------------------------------------------------
+PROMPT / INTERACTION 27: LangSmith Observability & Multi-Agent Distributed Tracing
+--------------------------------------------------------------------------------
+[USER REQUEST]:
+I want you to integrate LangSmith observability/tracing into my existing TraceMind backend.
+
+IMPORTANT:
+TraceMind is already working. DO NOT redesign, replace, or refactor the existing multi-agent architecture, retrieval pipeline, prompts, models, or reasoning logic.
+
+LangSmith must ONLY be added as an observability/tracing layer.
+
+Current backend:
+- Node.js
+- Express.js
+- Google ADK multi-agent orchestration
+- Ollama
+- qwen3:14b for text reasoning
+- qwen3-vl:8b for vision
+- nomic-embed-text for embeddings
+- Qdrant vector database
+- MongoDB
+- Cloudflare R2
+
+Current agents:
+src/backend/agents/
+├── adkOrchestrator.js
+├── planner.agent.js
+├── retrieval.agent.js
+├── vision.agent.js
+├── evidence.agent.js
+├── conflict.agent.js
+├── sufficiency.agent.js
+├── followup.agent.js
+└── answer.agent.js
+
+GOAL:
+Integrate LangSmith so I can visually inspect the complete execution of one TraceMind investigation.
+
+Structure:
+TraceMind Investigation (Root Trace)
+├── Planner Agent
+├── Retrieval Round 1 (Query Embedding, Qdrant Search, Candidate Ranking)
+├── Evidence Agent
+├── Conflict Agent
+├── Sufficiency Agent
+├── Follow-up Agent (only when required)
+├── Retrieval Round 2 (only when required)
+├── Vision Agent (only when visual evidence is required)
+└── Answer Agent
+
+Requirements:
+1. Install LangSmith JavaScript SDK (do not install LangChain or LangGraph).
+2. Environment variables: LANGSMITH_TRACING, LANGSMITH_API_KEY, LANGSMITH_PROJECT.
+3. Single root trace: "TraceMind Investigation" with all agent executions as child traces.
+4. Trace agents: Planner, Retrieval, Vision, Evidence, Conflict, Sufficiency, Follow-up, Answer.
+5. Trace retrieval with nested spans: Query Embedding, Qdrant Vector Search, Candidate Ranking.
+6. Trace multi-round search iterations.
+7. Trace Vision Agent metadata without raw image buffers or base64 data.
+8. Trace Ollama LLM calls with model, agent, duration, and token estimates.
+9. Latency and performance telemetry across all agents.
+10. Payload privacy control: omit secrets, tokens, passwords, raw base64, and huge document dumps.
+11. Fail-safe behavior: LangSmith errors or disabled state must never break TraceMind.
+12. Zero-overhead background tracing without blocking reasoning.
+
+[AI ACTIONS & IMPLEMENTATION]:
+- Installed official `langsmith` JavaScript SDK in `src/backend/package.json` (no LangChain / LangGraph).
+- Authored centralized tracing utility `src/backend/services/langsmith.service.js`:
+  * `isLangSmithEnabled()`: Verifies `LANGSMITH_TRACING === 'true'` and non-empty `LANGSMITH_API_KEY`.
+  * `sanitizeTracePayload()`: Automatically omits base64 image strings (`[BASE64_IMAGE_EXCLUDED]`), binary buffers, full document texts, and redacts sensitive credentials (`apiKey`, `jwt`, `token`, `password`, `authorization`).
+  * `traceInvestigation()`: Wraps user question execution with root span `"TraceMind Investigation"` and updates trace tree with final investigation summary metrics.
+  * `traceAgent()`: Wraps individual agent executions as child traces preserving execution order and multi-round numbers.
+  * `traceRetrievalSpan()`: Creates granular child spans (`Query Embedding`, `Qdrant Vector Search`, `Candidate Ranking`) recording similarity scores, candidate pool sizes, and matched filenames.
+  * `traceLlmCall()`: Traces Ollama text and vision model inferences capturing latency and token estimates.
+  * Fail-safe execution: All wrappers catch errors internally and gracefully fallback to running raw functions with 0ms overhead if LangSmith is disabled or network fails.
+- Configured `.env.example` and `.env` with `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT=TraceMind`.
+- Instrumented `src/backend/agents/adkOrchestrator.js` for root investigation and all 8 agents.
+- Instrumented `src/backend/services/retrieval.service.js` for retrieval sub-spans.
+- Instrumented `src/backend/services/ollama.service.js` for LLM and vision model inference spans.
+- Created automated test suite `src/backend/tests/langsmith-tracing.test.js` validating all 27 test cases (configuration detection, token redaction, payload sanitization, zero-overhead disabled mode, and enabled span hierarchy).
+- Verified full backward compatibility and zero regression via `tests/performance-regression.test.js` and `tests/zip-ingestion.test.js`.
+
 ===============================================================================
 END OF SESSION 04 LOG
 ===============================================================================

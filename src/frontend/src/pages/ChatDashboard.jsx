@@ -7,7 +7,6 @@ import { InvestigationPanel } from '../components/chat/InvestigationPanel';
 import { DocumentsView } from '../components/documents/DocumentsView';
 import { SettingsView } from '../components/settings/SettingsView';
 import { SourcePreviewModal } from '../components/chat/SourcePreviewModal';
-import { AgentFlowModal } from '../components/chat/AgentFlowModal';
 import { ProfileModal } from '../components/profile/ProfileModal';
 import { SignOutConfirmModal } from '../components/profile/SignOutConfirmModal';
 import { useAuth } from '../context/useAuth';
@@ -26,11 +25,11 @@ import {
   UploadCloudIcon,
   CheckCircleIcon,
   AlertCircleIcon,
-  NetworkIcon
+  FolderIcon,
+  CloseIcon
 } from '../components/common/Icons';
 import {
-  MOCK_USER_PROFILE,
-  MOCK_COLLECTIONS
+  MOCK_USER_PROFILE
 } from '../mock/chatMockData';
 import './ChatDashboard.css';
 
@@ -99,7 +98,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
   }, []);
 
   // Poll backend while documents are being vectorized and saved into Qdrant Cloud
-  const pollVectorizationStatus = useCallback((docIds = []) => {
+  const pollVectorizationStatus = useCallback((docIds = [], options = {}) => {
+    const { isZip = false, archiveSummary = null } = options;
     let attempts = 0;
     const maxAttempts = 80; // 80 * 1500ms = 2 minutes timeout
     let simulatedProgress = 35;
@@ -116,11 +116,15 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             : res.documents;
 
           const anyProcessing = relevantDocs.some(
-            (d) => d.status === 'processing' || d.status === 'uploaded'
+            (d) => d.status === 'processing' || d.status === 'uploaded' || d.status === 'analyzing'
           );
           const anyFailed = relevantDocs.some((d) => d.status === 'failed');
           const allReady =
             relevantDocs.length > 0 && relevantDocs.every((d) => d.status === 'ready');
+
+          const readyCount = relevantDocs.filter((d) => d.status === 'ready').length;
+          const analyzingCount = relevantDocs.filter((d) => d.status === 'analyzing').length;
+          const totalCount = relevantDocs.length;
 
           // CASE 1: All documents successfully indexed in knowledge base!
           if (allReady) {
@@ -130,8 +134,21 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               active: true,
               progress: 100,
               stage: 'ready',
-              message: 'All documents processed & indexed! Ready for questions.',
+              message: isZip
+                ? `Completed! Archive "${archiveSummary?.archive || 'ZIP'}" (${totalCount} files) fully indexed.`
+                : 'Completed! All documents processed & indexed! Ready for questions.',
             }));
+
+            if (isZip && archiveSummary) {
+              setArchiveNotification({
+                archive: archiveSummary.archive,
+                totalFiles: archiveSummary.totalFiles || totalCount,
+                processed: totalCount,
+                skipped: archiveSummary.skipped || 0,
+                failed: archiveSummary.failed || 0,
+                files: relevantDocs,
+              });
+            }
 
             setTimeout(() => {
               setVectorizationState((prev) => ({ ...prev, active: false }));
@@ -151,21 +168,42 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               message: failedDoc?.errorMessage || 'Document processing failed.',
             }));
 
+            if (isZip && archiveSummary) {
+              setArchiveNotification({
+                archive: archiveSummary.archive,
+                totalFiles: archiveSummary.totalFiles || totalCount,
+                processed: readyCount,
+                skipped: archiveSummary.skipped || 0,
+                failed: relevantDocs.filter((d) => d.status === 'failed').length,
+                files: relevantDocs,
+              });
+            }
+
             setTimeout(() => {
               setVectorizationState((prev) => ({ ...prev, active: false }));
             }, 6000);
             return;
           }
 
-          // CASE 3: In progress - advance simulated progress smoothly
+          // CASE 3: In progress - advance simulated progress smoothly with specific ZIP stages
           if (anyProcessing) {
             simulatedProgress = Math.min(95, simulatedProgress + 4);
-            let stageMessage = 'Extracting text and structural pages...';
+            let stageMessage = isZip
+              ? `Processing ${readyCount}/${totalCount}... Extracting documents`
+              : 'Extracting text and structural pages...';
 
-            if (simulatedProgress > 50 && simulatedProgress <= 75) {
-              stageMessage = 'Generating semantic embeddings...';
+            if (analyzingCount > 0) {
+              stageMessage = isZip
+                ? `Analyzing images with Qwen3-VL (${readyCount}/${totalCount} ready)...`
+                : 'Analyzing visual evidence with Vision Agent...';
+            } else if (simulatedProgress > 50 && simulatedProgress <= 75) {
+              stageMessage = isZip
+                ? `Generating embeddings (${readyCount}/${totalCount} ready)...`
+                : 'Generating semantic embeddings...';
             } else if (simulatedProgress > 75) {
-              stageMessage = 'Indexing document content and metadata...';
+              stageMessage = isZip
+                ? `Indexing evidence into Qdrant Cloud (${readyCount}/${totalCount} ready)...`
+                : 'Indexing document content and metadata...';
             }
 
             setVectorizationState((prev) => ({
@@ -359,20 +397,6 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
 
   // Active Source Modal Preview
   const [selectedSource, setSelectedSource] = useState(null);
-
-  // 3D Agent Flow Modal State & Live Flow Tracking
-  const [agentFlowModalOpen, setAgentFlowModalOpen] = useState(false);
-  const [selectedFlowData, setSelectedFlowData] = useState(null);
-  const [liveAgentFlow, setLiveAgentFlow] = useState({
-    isLive: false,
-    events: [],
-    searchRounds: 1,
-    sourcesReviewed: 0,
-    conflictsDetected: 0,
-    activeAgent: null,
-  });
-
-
   // Handle setting changes
   const handleUpdateSetting = (key, value) => {
     setSettings(prev => {
@@ -415,8 +439,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       }
       return `${currentScope.length} Active Documents`;
     }
-    const col = MOCK_COLLECTIONS.find((c) => c.id === currentScope);
-    if (col) return col.name;
+
     const doc = documents.find((d) => (d._id || d.id) === currentScope);
     if (doc) return doc.title || doc.filename || 'Target Document';
     return 'Target Document';
@@ -432,12 +455,20 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     return doc ? [doc] : [];
   };
 
-  // Remove individual document from active conversation scope
-  const handleRemoveScopeDoc = (docIdToRemove) => {
-    if (Array.isArray(currentScope)) {
-      const next = currentScope.filter((id) => id !== docIdToRemove);
+  // Remove document(s) from active conversation scope
+  const handleRemoveScopeDoc = (docIdOrIdsToRemove) => {
+    if (Array.isArray(docIdOrIdsToRemove)) {
+      const set = new Set(docIdOrIdsToRemove);
+      if (Array.isArray(currentScope)) {
+        const next = currentScope.filter((id) => !set.has(id));
+        setCurrentScope(next.length === 0 ? null : next.length === 1 ? next[0] : next);
+      } else if (set.has(currentScope)) {
+        setCurrentScope(null);
+      }
+    } else if (Array.isArray(currentScope)) {
+      const next = currentScope.filter((id) => id !== docIdOrIdsToRemove);
       setCurrentScope(next.length === 0 ? null : next.length === 1 ? next[0] : next);
-    } else if (currentScope === docIdToRemove) {
+    } else if (currentScope === docIdOrIdsToRemove) {
       setCurrentScope(null);
     }
   };
@@ -493,6 +524,18 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     }
   };
 
+  const handleDeleteAllDocuments = async () => {
+    try {
+      const res = await documentsApi.deleteAll();
+      setDocuments([]);
+      setCurrentScope(null);
+      return res;
+    } catch (err) {
+      console.error('Delete all documents failed:', err);
+      throw err;
+    }
+  };
+
   const handleViewDocument = async (docId) => {
     try {
       const response = await documentsApi.getViewUrl(docId);
@@ -538,6 +581,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       return;
     }
 
+    const isZip = files.some((f) => (f.name || '').toLowerCase().endsWith('.zip'));
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
@@ -547,7 +591,9 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       stage: 'uploading',
       filename: displayFilename,
       count: files.length,
-      message: 'Uploading to secure document storage (0%)...',
+      message: isZip
+        ? 'Uploading ZIP archive... Validating files & path security...'
+        : 'Uploading to secure document storage (0%)...',
     });
 
     try {
@@ -558,7 +604,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           progress: uploadScaledProgress,
           stage: 'uploading',
           message: percent === 100
-            ? 'Stored securely! Extracting text and pages...'
+            ? (isZip ? 'Extracting archive & scanning files...' : 'Stored securely! Extracting text and pages...')
             : `Uploading to document storage (${percent}%)...`,
         }));
       });
@@ -577,16 +623,17 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
         await refreshUserDocuments();
       }
 
-
       setVectorizationState(prev => ({
         ...prev,
         progress: 35,
         stage: 'processing',
-        message: 'Extracting text (PDF/DOCX/TXT/MD)...',
+        message: isZip
+          ? `Processing 1/${uploadedDocIds.length || 1}... Extracting archive files`
+          : 'Extracting text (PDF/DOCX/TXT/MD)...',
       }));
 
       // Start live polling until RunPod embeddings are computed and saved in Qdrant Cloud
-      pollVectorizationStatus(uploadedDocIds);
+      pollVectorizationStatus(uploadedDocIds, { isZip, archiveSummary: result });
 
     } catch (err) {
       console.error('Upload failed:', err);
@@ -650,136 +697,17 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Initial Live Agent Progression: Planner Agent
-    const initialLiveEvents = [
-      {
-        agent: 'planner',
-        event: 'PLANNING_STARTED',
-        status: 'running',
-        round: 1,
-        message: 'Formulating multi-hop search strategy and extracting key query entities',
-        timestamp: new Date().toISOString(),
-        metadata: { searchRationale: 'Deconstructing question for dense vector retrieval' }
-      }
-    ];
-
     setInvestigationStepText('Formulating search strategy with Planner Agent...');
-    setLiveAgentFlow({
-      isLive: true,
-      events: initialLiveEvents,
-      searchRounds: 1,
-      sourcesReviewed: 0,
-      conflictsDetected: 0,
-      activeAgent: 'planner'
-    });
-
     const stepTimer1 = setTimeout(() => {
       setInvestigationStepText('Executing semantic search across knowledge base...');
-      setLiveAgentFlow(prev => ({
-        ...prev,
-        isLive: true,
-        activeAgent: 'retrieval',
-        sourcesReviewed: 6,
-        events: [
-          { ...initialLiveEvents[0], status: 'completed' },
-          {
-            agent: 'retrieval',
-            event: 'SEARCH_IN_PROGRESS',
-            status: 'running',
-            round: 1,
-            message: 'Searching document knowledge base for relevant passages',
-            timestamp: new Date().toISOString(),
-            metadata: { sourcesFound: 6 }
-          }
-        ]
-      }));
     }, 800);
 
     const stepTimer2 = setTimeout(() => {
       setInvestigationStepText('Extracting verified claims with Evidence & Conflict Agents...');
-      setLiveAgentFlow(prev => ({
-        ...prev,
-        isLive: true,
-        sourcesReviewed: 12,
-        activeAgent: 'evidence',
-        events: [
-          { ...initialLiveEvents[0], status: 'completed' },
-          {
-            agent: 'retrieval',
-            event: 'SEARCH_COMPLETED',
-            status: 'completed',
-            round: 1,
-            message: 'Retrieved 12 relevant document passages from knowledge base',
-            timestamp: new Date().toISOString(),
-            metadata: { sourcesFound: 12 }
-          },
-          {
-            agent: 'evidence',
-            event: 'EVIDENCE_ANALYZED',
-            status: 'completed',
-            round: 1,
-            message: 'Extracted grounded factual statements and cross-referenced claims',
-            timestamp: new Date().toISOString(),
-            metadata: { factsExtracted: 8, sourcesFound: 12 }
-          },
-          {
-            agent: 'sufficiency',
-            event: 'SUFFICIENCY_EVALUATION',
-            status: 'running',
-            round: 1,
-            message: 'Evaluating evidence completeness and inspecting for source discrepancies',
-            timestamp: new Date().toISOString(),
-            metadata: { isSufficient: true, confidenceScore: 96 }
-          }
-        ]
-      }));
     }, 1900);
 
     const stepTimer3 = setTimeout(() => {
       setInvestigationStepText('Synthesizing verified, citation-grounded response...');
-      setLiveAgentFlow(prev => ({
-        ...prev,
-        isLive: true,
-        activeAgent: 'answer',
-        events: [
-          { ...initialLiveEvents[0], status: 'completed' },
-          {
-            agent: 'retrieval',
-            event: 'SEARCH_COMPLETED',
-            status: 'completed',
-            round: 1,
-            message: 'Retrieved 12 relevant document passages from knowledge base',
-            timestamp: new Date().toISOString(),
-            metadata: { sourcesFound: 12 }
-          },
-          {
-            agent: 'evidence',
-            event: 'EVIDENCE_ANALYZED',
-            status: 'completed',
-            round: 1,
-            message: 'Extracted grounded factual statements and cross-referenced claims',
-            timestamp: new Date().toISOString(),
-            metadata: { factsExtracted: 8, sourcesFound: 12 }
-          },
-          {
-            agent: 'sufficiency',
-            event: 'SUFFICIENCY_VERIFIED',
-            status: 'completed',
-            round: 1,
-            message: 'Evidence sufficiency verified with high confidence',
-            timestamp: new Date().toISOString(),
-            metadata: { isSufficient: true, confidenceScore: 98 }
-          },
-          {
-            agent: 'answer',
-            event: 'ANSWER_SYNTHESIS',
-            status: 'running',
-            round: 1,
-            message: 'Synthesizing verified, citation-grounded response',
-            timestamp: new Date().toISOString()
-          }
-        ]
-      }));
     }, 3200);
 
     try {
@@ -804,30 +732,11 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
       if (returnedSteps.length > 0) {
         setActiveInvestigationSteps(returnedSteps);
       }
-
-      const finalEvents = (result.executionEvents && result.executionEvents.length > 0)
-        ? result.executionEvents.map(e => ({ ...e, status: 'completed' }))
-        : [];
-
-      const finalFlowData = {
-        isLive: false,
-        events: finalEvents,
-        searchRounds: result.roundsCount || result.evaluationMetrics?.roundsCount || 1,
-        sourcesReviewed: result.totalEvidenceChunks || (result.sources ? result.sources.length : 0),
-        conflictsDetected: result.evaluationMetrics?.conflictsCount || (result.conflictDetected ? 1 : 0),
-        investigationSteps: returnedSteps,
-        evaluationMetrics: result.evaluationMetrics || {},
-      };
-
-      setLiveAgentFlow(finalFlowData);
-      setSelectedFlowData(finalFlowData);
-
       const aiReply = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         content: result.answer,
-        investigationFlow: finalFlowData,
         sources: (result.sources || []).map((src, idx) => ({
           id: src.pointId || `src-${idx + 1}`,
           documentTitle: src.fileName || 'Document',
@@ -1048,27 +957,6 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                     <span className="hidden-sm">Investigation</span>
                   </button>
                 )}
-
-                {/* 3D Agent Flow Button */}
-                <button
-                  type="button"
-                  className={`btn-agent-flow-topbar ${isLoading ? 'live-pulsing' : ''}`}
-                  onClick={() => {
-                    if (isLoading) {
-                      setSelectedFlowData(liveAgentFlow);
-                    } else if (!selectedFlowData && messages.length > 0) {
-                      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
-                      if (lastAssistant?.investigationFlow) {
-                        setSelectedFlowData(lastAssistant.investigationFlow);
-                      }
-                    }
-                    setAgentFlowModalOpen(true);
-                  }}
-                  title="View Multi-Agent Execution Flow"
-                >
-                  <NetworkIcon size={16} />
-                  <span className="hidden-xs">{isLoading ? 'Live Agent Flow' : 'Agent Flow'}</span>
-                </button>
               </>
             )}
 
@@ -1152,6 +1040,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
             isLoading={isLoadingDocs}
             error={docsError}
             onDeleteDocument={handleDeleteDocument}
+            onDeleteAllDocuments={handleDeleteAllDocuments}
             onSelectDocumentForChat={handleSelectDocumentForChat}
             onViewDocument={handleViewDocument}
           />
@@ -1178,22 +1067,6 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
                   onSelectSuggestion={(text, scope) => handleSendMessage(text, scope)}
                   onOpenSourcePreview={setSelectedSource}
                   onOpenInvestigation={() => setInvestigationOpen(true)}
-                  onOpenAgentFlow={(msg) => {
-                    if (msg?.isLive || isLoading) {
-                      setSelectedFlowData(liveAgentFlow);
-                    } else if (msg?.investigationFlow) {
-                      setSelectedFlowData(msg.investigationFlow);
-                    } else {
-                      setSelectedFlowData({
-                        events: [],
-                        searchRounds: msg?.reasoningSummary?.roundsCount || 1,
-                        sourcesReviewed: msg?.sources?.length || 0,
-                        conflictsDetected: msg?.reasoningSummary?.conflictDetected ? 1 : 0,
-                        investigationSteps: activeInvestigationSteps,
-                      });
-                    }
-                    setAgentFlowModalOpen(true);
-                  }}
                   showCitations={settings.showSourceCitations}
                   showConfidence={settings.showEvidenceConfidence}
                 />
@@ -1215,6 +1088,7 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
               activeScopeName={getActiveScopeName()}
               activeScopeDocs={getActiveScopeDocs()}
               onRemoveScopeDoc={handleRemoveScopeDoc}
+              onClearScope={() => setCurrentScope(null)}
               onTriggerScopeSelect={() => {}}
             />
 
@@ -1230,26 +1104,8 @@ export const ChatDashboard = ({ onNavigate, initialView = 'chat' }) => {
           isOpen={investigationOpen}
           onClose={() => setInvestigationOpen(false)}
           isInvestigating={isLoading}
-          onOpenAgentFlow={() => {
-            setSelectedFlowData(isLoading ? liveAgentFlow : (selectedFlowData || {
-              events: [],
-              searchRounds: 1,
-              sourcesReviewed: 0,
-              conflictsDetected: 0,
-              investigationSteps: activeInvestigationSteps
-            }));
-            setAgentFlowModalOpen(true);
-          }}
         />
       )}
-
-      {/* 4. Interactive 3D Agent Execution Flow Modal */}
-      <AgentFlowModal
-        isOpen={agentFlowModalOpen}
-        onClose={() => setAgentFlowModalOpen(false)}
-        flowData={isLoading && liveAgentFlow.isLive ? liveAgentFlow : (selectedFlowData || liveAgentFlow)}
-      />
-
       {/* 5. Source Preview Modal / Drawer */}
       <SourcePreviewModal
         source={selectedSource}

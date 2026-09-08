@@ -17,15 +17,18 @@ export const processDocumentForRag = async ({
   userId,
   buffer,
   filename,
+  originalName = null,
   fileType,
   mimeType,
+  parentZipName = null,
+  relativePath = null,
 }) => {
   const isImageFile =
     fileType === 'IMAGE' ||
     (mimeType && mimeType.startsWith('image/')) ||
     /\.(png|jpg|jpeg|webp)$/i.test(filename);
 
-  console.log(`\n⚙️ [RAG Pipeline] Processing ${isImageFile ? 'image' : 'document'}: "${filename}" (ID: ${documentId})`);
+  console.log(`\n[RAG Pipeline] Processing ${isImageFile ? 'image' : 'document'}: "${filename}" (ID: ${documentId})${parentZipName ? ` [Archive: ${parentZipName} | Path: ${relativePath}]` : ''}`);
 
   try {
     // 1. Mark status as 'processing' or 'analyzing' in MongoDB
@@ -35,13 +38,18 @@ export const processDocumentForRag = async ({
     });
 
     // 2. Extract text/vision evidence from document or image buffer
-    console.log(`📄 [RAG Pipeline] ${isImageFile ? 'Analyzing image with Qwen-VL' : 'Extracting text'} for: "${filename}"...`);
+    // NOTE: Images are routed DIRECTLY to extractFromImage -> Vision Agent (Qwen3-VL)
+    // without any text-only pre-extraction step.
+    console.log(`[RAG Pipeline] ${isImageFile ? 'Analyzing image with Qwen3-VL Vision Agent' : 'Extracting text'} for: "${filename}"...`);
+    const tExtract0 = Date.now();
     const extractionResult = await extractDocumentText({
       buffer,
       filename,
       fileType,
       mimeType,
+      documentId,
     });
+    const extractionMs = Date.now() - tExtract0;
 
     if (!extractionResult.fullText || !extractionResult.fullText.trim()) {
       throw new Error(
@@ -52,17 +60,21 @@ export const processDocumentForRag = async ({
     }
 
     console.log(
-      `✅ [RAG Pipeline] Extracted ${extractionResult.fullText.length} characters across ${extractionResult.totalPages} page/image unit(s).`
+      `[RAG Pipeline] Extracted ${extractionResult.fullText.length} characters across ${extractionResult.totalPages} page/image unit(s).`
     );
 
     // 3. Create semantic chunks (~1000 tokens, 10-15% overlap)
-    console.log(`🧩 [RAG Pipeline] Chunking content with 10-15% overlap...`);
+    console.log(`[RAG Pipeline] Chunking content with 10-15% overlap...`);
+    const tChunk0 = Date.now();
     const rawChunks = createDocumentChunks({
       pages: extractionResult.pages,
       fullText: extractionResult.fullText,
       documentId,
       userId,
       fileName: filename,
+      originalName: originalName || filename,
+      archiveName: parentZipName,
+      relativePath: relativePath,
       targetTokens: 1000,
       overlapPercent: 0.12, // 12%
     });
@@ -71,8 +83,9 @@ export const processDocumentForRag = async ({
       throw new Error('No valid text chunks could be generated.');
     }
 
+    const chunkingMs = Date.now() - tChunk0;
     console.log(
-      `✅ [RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating Nomic embeddings on RunPod Ollama...`
+      `[RAG Pipeline] Generated ${rawChunks.length} RAG chunk(s). Generating Nomic embeddings on RunPod Ollama...`
     );
 
     // Update status to 'processing' before embeddings
@@ -81,18 +94,25 @@ export const processDocumentForRag = async ({
     });
 
     // 4. Generate embeddings via RunPod Ollama (Nomic Embed Text) in parallel batches
+    const tEmbed0 = Date.now();
     const embeddings = await generateBatchEmbeddings(rawChunks, 4);
+    const embeddingMs = Date.now() - tEmbed0;
 
     // 5. Store chunk text, embedding vectors, and metadata in Qdrant Cloud (NOT MongoDB)
-    console.log(`🔷 [RAG Pipeline] Uploading vector chunks to Qdrant Cloud...`);
+    console.log(`[RAG Pipeline] Uploading vector chunks to Qdrant Cloud...`);
+    const tQdrant0 = Date.now();
     const qdrantResult = await upsertDocumentChunks({
       documentId,
       userId,
       fileName: filename,
+      archiveName: parentZipName,
+      relativePath: relativePath,
       chunks: rawChunks,
       vectors: embeddings,
     });
 
+    const qdrantMs = Date.now() - tQdrant0;
+    const tMongo0 = Date.now();
     // 6. Only mark document 'ready' in MongoDB after all chunks are successfully stored in Qdrant
     await Document.findByIdAndUpdate(documentId, {
       status: 'ready',
@@ -103,12 +123,16 @@ export const processDocumentForRag = async ({
         sourceType: isImageFile ? 'image' : 'document',
         visionModel: extractionResult.model || null,
         vectorStorage: qdrantResult.storage || 'qdrant_cloud',
+        archiveName: parentZipName || null,
+        relativePath: relativePath || filename,
+        extractedEvidence: extractionResult.structuredEvidence || null,
         processedAt: new Date(),
       },
     });
+    const mongoMs = Date.now() - tMongo0;
 
     console.log(
-      `🎉 [RAG Pipeline] ${isImageFile ? 'Image' : 'Document'} "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
+      `[RAG Pipeline] ${isImageFile ? 'Image' : 'Document'} "${filename}" is READY in Qdrant Cloud for RAG retrieval!\n`
     );
 
     return {
@@ -117,11 +141,22 @@ export const processDocumentForRag = async ({
       chunksCount: rawChunks.length,
       totalPages: extractionResult.totalPages,
       isImage: isImageFile,
+      archiveName: parentZipName,
+      relativePath,
       storage: qdrantResult.storage,
+      timings: {
+        extractionMs,
+        chunkingMs,
+        embeddingMs,
+        qdrantMs,
+        mongoMs,
+        isImage: isImageFile,
+        chunksCount: rawChunks.length,
+      },
     };
   } catch (error) {
     console.error(
-      `❌ [RAG Pipeline] Processing failed for "${filename}":`,
+      `[RAG Pipeline] Processing failed for "${filename}":`,
       error.message
     );
 
@@ -129,7 +164,7 @@ export const processDocumentForRag = async ({
     try {
       const failedDoc = await Document.findById(documentId);
       if (failedDoc && failedDoc.r2Key) {
-        console.log(`🗑️ [RAG Cleanup] Deleting failed file from Cloudflare R2: "${failedDoc.r2Key}"...`);
+        console.log(`[RAG Cleanup] Deleting failed file from Cloudflare R2: "${failedDoc.r2Key}"...`);
         await deleteFileFromR2({ key: failedDoc.r2Key });
       }
       // Also ensure any partial vectors are removed from Qdrant

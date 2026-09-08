@@ -7,6 +7,7 @@ import {
   getDocumentViewUrl,
   streamLocalDocument,
   deleteDocument,
+  deleteAllDocuments,
 } from '../controllers/document.controller.js';
 
 const router = express.Router();
@@ -67,6 +68,8 @@ router.post('/upload', protect, handleUploadMiddleware, uploadDocuments);
 router.get('/', protect, getUserDocuments);
 router.get('/:id/view-url', protect, getDocumentViewUrl);
 router.get('/stream/:key', streamLocalDocument);
+router.delete('/all', protect, deleteAllDocuments);
+router.delete('/', protect, deleteAllDocuments);
 router.delete('/:id', protect, deleteDocument);
 
 export default router;

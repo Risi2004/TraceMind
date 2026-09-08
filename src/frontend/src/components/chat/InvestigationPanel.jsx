@@ -10,8 +10,7 @@ import {
   AlertCircleIcon,
   ChevronDownIcon,
   CloseIcon,
-  CheckIcon,
-  NetworkIcon
+  CheckIcon
 } from '../common/Icons';
 import './InvestigationPanel.css';
 
@@ -19,8 +18,7 @@ export const InvestigationPanel = ({
   steps = [],
   isOpen,
   onClose,
-  isInvestigating = false,
-  onOpenAgentFlow
+  isInvestigating = false
 }) => {
   const [expandedSteps, setExpandedSteps] = useState({ 0: true, 1: true, 5: true });
 
@@ -71,19 +69,6 @@ export const InvestigationPanel = ({
           aria-label="Close investigation panel"
         >
           <CloseIcon size={18} />
-        </button>
-      </div>
-
-      {/* 3D Agent Flow Quick Launcher */}
-      <div className="investigation-flow-action-bar">
-        <button
-          type="button"
-          className="launch-3d-flow-btn"
-          onClick={onOpenAgentFlow}
-          title="Open interactive 3D WebGL visualization of agent pipeline"
-        >
-          <NetworkIcon size={15} />
-          <span>View 3D Agent Flow</span>
         </button>
       </div>
 

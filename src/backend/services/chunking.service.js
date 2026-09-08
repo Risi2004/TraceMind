@@ -3,7 +3,7 @@
  * - ~1000 tokens target per chunk (~3500-4000 chars)
  * - 10-15% overlap (~100-150 tokens / ~400-500 chars)
  * - Preserves headings (#), paragraphs (\n\n), and sentence boundaries
- * - Includes user ID, document ID, file name, page number, and chunk index metadata
+ * - Includes user ID, document ID, file name, archive name, relative path, page number, and chunk index metadata
  */
 
 const DEFAULT_TARGET_TOKENS = 1000;
@@ -71,72 +71,54 @@ export const chunkText = (
     const unit = units[i];
     const unitTokens = estimateTokenCount(unit);
 
-    // If single unit alone exceeds targetTokens, push it directly
-    if (unitTokens >= targetTokens) {
-      if (currentUnits.length > 0) {
-        chunks.push({
-          text: currentUnits.join('\n\n'),
-          tokenCount: currentTokens,
-          pageNumber,
-        });
-        currentUnits = [];
-        currentTokens = 0;
-      }
-
-      chunks.push({
-        text: unit,
-        tokenCount: unitTokens,
-        pageNumber,
-      });
-      continue;
-    }
-
-    // If adding unit exceeds target chunk capacity
     if (currentTokens + unitTokens > targetTokens && currentUnits.length > 0) {
-      const chunkTextContent = currentUnits.join('\n\n');
+      // Finalize current chunk
+      const chunkContent = currentUnits.join('\n\n').trim();
       chunks.push({
-        text: chunkTextContent,
+        text: chunkContent,
         tokenCount: currentTokens,
         pageNumber,
       });
 
-      // Calculate overlap units from the end of current chunk
-      const overlapUnits = [];
-      let overlapAccumulatedTokens = 0;
+      // Calculate overlap: keep recent units that fit within overlapTokenCount
+      let overlapUnits = [];
+      let overlapCount = 0;
 
       for (let j = currentUnits.length - 1; j >= 0; j--) {
-        const prevUnit = currentUnits[j];
-        const prevTokens = estimateTokenCount(prevUnit);
-        if (overlapAccumulatedTokens + prevTokens <= overlapTokenCount) {
-          overlapUnits.unshift(prevUnit);
-          overlapAccumulatedTokens += prevTokens;
+        const uTokens = estimateTokenCount(currentUnits[j]);
+        if (overlapCount + uTokens <= overlapTokenCount) {
+          overlapUnits.unshift(currentUnits[j]);
+          overlapCount += uTokens;
         } else {
           break;
         }
       }
 
       currentUnits = [...overlapUnits, unit];
-      currentTokens = overlapAccumulatedTokens + unitTokens;
+      currentTokens = overlapCount + unitTokens;
     } else {
       currentUnits.push(unit);
       currentTokens += unitTokens;
     }
   }
 
-  // Push remainder chunk
+  // Push remaining units
   if (currentUnits.length > 0) {
-    chunks.push({
-      text: currentUnits.join('\n\n'),
-      tokenCount: currentTokens,
-      pageNumber,
-    });
+    const chunkContent = currentUnits.join('\n\n').trim();
+    if (chunkContent) {
+      chunks.push({
+        text: chunkContent,
+        tokenCount: currentTokens,
+        pageNumber,
+      });
+    }
   }
 
   return chunks;
 };
 
 /**
- * Split document pages into structured RAG chunks with full metadata
+ * Create chunks from full document text or page-by-page array with full metadata grounding
  */
 export const createDocumentChunks = ({
   pages = [],
@@ -144,6 +126,9 @@ export const createDocumentChunks = ({
   documentId,
   userId,
   fileName,
+  originalName = null,
+  archiveName = null,
+  relativePath = null,
   targetTokens = DEFAULT_TARGET_TOKENS,
   overlapPercent = DEFAULT_OVERLAP_PERCENT,
 }) => {
@@ -173,7 +158,7 @@ export const createDocumentChunks = ({
 
   const totalChunks = allRawChunks.length;
 
-  // Enrich with required metadata
+  // Enrich with required metadata including ZIP archive origins
   return allRawChunks.map((chunk, index) => {
     const isImageChunk = Boolean(chunk.isImage || (pages[0] && pages[0].isImage));
     const sourceType = isImageChunk ? 'image' : 'document';
@@ -184,6 +169,9 @@ export const createDocumentChunks = ({
       documentId,
       userId,
       fileName,
+      originalName: originalName || fileName,
+      archiveName: archiveName || null,
+      relativePath: relativePath || null,
       chunkIndex: index,
       totalChunks,
       pageNumber: chunk.pageNumber || 1,
@@ -201,6 +189,9 @@ export const createDocumentChunks = ({
         pageNumber: chunk.pageNumber || 1,
         imageIndex: isImageChunk ? 0 : undefined,
         fileName,
+        originalName: originalName || fileName,
+        archiveName: archiveName || null,
+        relativePath: relativePath || null,
         isImage: isImageChunk,
         sourceType,
         contentType,

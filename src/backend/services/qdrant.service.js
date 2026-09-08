@@ -157,6 +157,8 @@ export const upsertDocumentChunks = async ({
   documentId,
   userId,
   fileName,
+  archiveName = null,
+  relativePath = null,
   chunks = [],
   vectors = [],
 }) => {
@@ -176,6 +178,10 @@ export const upsertDocumentChunks = async ({
       documentId: String(documentId),
       userId: String(userId),
       fileName: String(fileName),
+      archiveName: chunk.archiveName || archiveName || null,
+      relativePath: chunk.relativePath || relativePath || null,
+      sourceType: chunk.sourceType || 'document',
+      isImage: Boolean(chunk.isImage),
       chunkNumber: (chunk.chunkIndex !== undefined ? chunk.chunkIndex : index) + 1,
       chunkIndex: chunk.chunkIndex !== undefined ? chunk.chunkIndex : index,
       pageNumber: chunk.pageNumber || 1,
@@ -184,6 +190,7 @@ export const upsertDocumentChunks = async ({
       charCount: chunk.charCount || chunk.text.length,
       totalChunks: chunk.totalChunks || chunks.length,
       createdAt: new Date().toISOString(),
+      ...(chunk.metadata || {}),
     },
   }));
 
@@ -244,6 +251,49 @@ export const deleteDocumentVectors = async (documentId) => {
     }
   } else {
     localFallbackVectorStore.delete(String(documentId));
+    return true;
+  }
+};
+
+/**
+ * Delete all vector chunks associated with a user or list of documents from Qdrant Cloud
+ * @param {string} userId - The user ID whose vectors should be removed
+ * @param {Array<string>} [documentIds] - Optional list of document IDs to clean up in local fallback
+ */
+export const deleteUserVectors = async (userId, documentIds = []) => {
+  const client = getQdrantClient();
+  const collectionName = getQdrantCollectionName();
+
+  if (client) {
+    try {
+      console.log(`🔷 [Qdrant] Deleting all points for userId: "${userId}"...`);
+      await client.delete(collectionName, {
+        wait: true,
+        filter: {
+          must: [
+            {
+              key: 'userId',
+              match: {
+                value: String(userId),
+              },
+            },
+          ],
+        },
+      });
+      console.log(`✅ [Qdrant] Deleted all points for userId: "${userId}".`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [Qdrant] Delete error for userId ${userId}:`, error.message);
+      return false;
+    }
+  } else {
+    if (documentIds && documentIds.length > 0) {
+      for (const id of documentIds) {
+        localFallbackVectorStore.delete(String(id));
+      }
+    } else {
+      localFallbackVectorStore.clear();
+    }
     return true;
   }
 };
@@ -321,14 +371,21 @@ export const searchSimilarChunks = async ({
       with_payload: true,
     };
 
-    if (scoreThreshold !== undefined && scoreThreshold !== null) {
+    if (scoreThreshold !== undefined && scoreThreshold !== null && typeof scoreThreshold === 'number' && !isNaN(scoreThreshold)) {
       queryParams.score_threshold = scoreThreshold;
     }
 
     const searchResponse = await client.query(collectionName, queryParams);
     return searchResponse.points || [];
   } catch (error) {
-    console.error(`❌ [Qdrant] Search error:`, error.message);
+    console.error(`❌ [Qdrant] Search error:`, error.message, error.status, JSON.stringify(error.data || error.response?.data || error.message));
+    console.error(`❌ [Qdrant] QueryParams summary:`, {
+      collectionName,
+      filter: JSON.stringify(mustFilters),
+      limit,
+      scoreThreshold,
+      vectorLength: Array.isArray(queryVector) ? queryVector.length : typeof queryVector,
+    });
     throw error;
   }
 
@@ -361,6 +418,7 @@ export default {
   ensureCollectionExists,
   upsertDocumentChunks,
   deleteDocumentVectors,
+  deleteUserVectors,
   searchSimilarChunks,
   checkQdrantHealth,
   isQdrantConfigured,
