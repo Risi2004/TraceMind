@@ -9,6 +9,7 @@
 [![Cloudflare R2](https://img.shields.io/badge/Cloudflare-R2_Storage-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://www.cloudflare.com/products/r2/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local/Remote_AI-000000?style=flat-square&logo=ollama&logoColor=white)](https://ollama.com/)
+[![LangSmith](https://img.shields.io/badge/LangSmith-Observability_&_Tracing-FF6F00?style=flat-square&logo=langchain&logoColor=white)](https://smith.langchain.com/)
 
 ---
 
@@ -24,6 +25,7 @@
 - [Environment Configuration](#-environment-configuration)
 - [Running the Application](#-running-the-application)
 - [API Reference](#-api-reference)
+- [LangSmith Observability & Tracing](#-langsmith-observability--tracing)
 - [Project Directory Structure](#-project-directory-structure)
 - [Verification & Testing](#-verification--testing)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
@@ -44,7 +46,7 @@ TraceMind autonomously breaks down complex inquiries, searches multi-format docu
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        TraceMind React Frontend                         │
-│   (React 19 + Vite + Modern Glassmorphism + Three.js Neural Visualizer) │
+│      (React 19 + Vite + Modern Glassmorphism + Live Forensic Stream)    │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ HTTP REST / SSE Telemetry
 ┌────────────────────────────────────▼────────────────────────────────────┐
@@ -63,16 +65,16 @@ TraceMind autonomously breaks down complex inquiries, searches multi-format docu
 │ │  │          Answer Synthesis & Follow-up Agents                   │ │ │
 │ │  └────────────────────────────────────────────────────────────────┘ │ │
 │ └─────────────────────────────────────────────────────────────────────┘ │
-└─────────┬───────────────────────┬───────────────────────────┬───────────┘
-          │                       │                           │
-          ▼                       ▼                           ▼
-┌──────────────────┐    ┌──────────────────┐    ┌─────────────────────────┐
-│  Cloudflare R2   │    │  Qdrant Vector   │    │      RunPod GPU         │
-│  Object Storage  │    │     Database     │    │  (Ollama AI Engine)     │
-│ (Raw Docs/Images)│    │ (Dense Embeddings│    │  - qwen3:14b            │
-│                  │    │  + Metadata)     │    │  - qwen3-vl:8b          │
-│                  │    │                  │    │  - nomic-embed-text     │
-└──────────────────┘    └──────────────────┘    └─────────────────────────┘
+└───────┬─────────────────────┬───────────────────────────┬───────────────┘
+        │                     │                           │               │
+        ▼                     ▼                           ▼               ▼
+┌──────────────────┐  ┌──────────────────┐  ┌─────────────────────────┐ ┌─────────────────────────┐
+│  Cloudflare R2   │  │  Qdrant Vector   │  │      RunPod GPU         │ │     LangSmith Cloud     │
+│  Object Storage  │  │     Database     │  │  (Ollama AI Engine)     │ │  (Observability/Tracing)│
+│ (Raw Docs/Images)│  │ (Dense Embedding │  │  - qwen3:14b            │ │  - Hierarchical Spans   │
+│                  │  │  + Metadata)     │  │  - qwen3-vl:8b          │ │  - Latency & Token Evals│
+│                  │  │                  │  │  - nomic-embed-text     │ │  - Automated Redaction  │
+└──────────────────┘  └──────────────────┘  └─────────────────────────┘ └─────────────────────────┘
 ```
 
 ---
@@ -126,7 +128,8 @@ flowchart TD
   - *Region 4: Handwritten Annotations* (stamps, margins, handwritten corrections)
   - *Region 5: Legends & Footnotes* (symbology, classification scales, measurement keys)
 - **Direct Clipboard Screenshot Pasting**: Capture screenshots via `Win + Shift + S` or `Cmd + Shift + 4` and paste them directly (`Ctrl + V`) into the chat input for instant OCR, vectorization, and reasoning.
-- **Real-Time 3D Agent Flow Visualizer**: Interactive Three.js neural visualizer that maps real-time agent execution rounds, confidence metrics, and evidence state transitions.
+- **End-to-End LangSmith Observability & Tracing**: Production-grade distributed tracing of the multi-agent reasoning loop (`traceInvestigation`, `traceAgent`, `traceRetrievalSpan`, `traceLlmCall`). Captures agent run trees, dynamic sufficiency confidence scores, retrieval latencies, and token usage metrics with automated PII and vector payload sanitization.
+- **Real-Time Forensic Telemetry Stream**: Server-Sent Events (SSE) telemetry mapping real-time agent execution rounds, confidence metrics, multi-hop sub-tasks, and evidence state transitions.
 - **Enterprise Storage & Vector Search**: Cloudflare R2 object storage with pre-signed direct streaming and Qdrant Cloud vector indexing with Nomic embeddings.
 - **Comprehensive User Auth & Audit Trail**: JWT session authentication, bcrypt password hashing, SMTP email verification, and complete document management.
 
@@ -145,6 +148,7 @@ Before running TraceMind, ensure you have the following installed and configured
 | **Cloudflare R2** | — | S3-compatible bucket for raw file storage |
 | **SMTP Service** | — | [Mailtrap](https://mailtrap.io/) (dev) or Gmail/SendGrid (prod) |
 | **GPU Instance** | — | [RunPod](https://runpod.io/) (L40 48GB / RTX 4090 / A100) or local CUDA GPU with [Ollama](https://ollama.com/) |
+| **LangSmith** | — | [LangSmith](https://smith.langchain.com/) for multi-agent observability & trace debugging (optional) |
 
 ---
 
@@ -320,6 +324,14 @@ QDRANT_COLLECTION=tracemind_chunks
 RAG_TOP_K=8
 MAX_SEARCH_ROUNDS=4
 ENABLE_ADK_DEBUG_LOGS=true
+
+# -------------------------------------------------------------
+# LangSmith Observability & Tracing (Optional)
+# -------------------------------------------------------------
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=TraceMind
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 ```
 
 ### Frontend Configuration (`src/frontend/.env`)
@@ -384,9 +396,40 @@ npm run dev:frontend
 
 ### 4. Multi-Agent Reasoning & RAG (`/api/rag`)
 - `POST /api/rag/chat` — Execute full multi-agent investigation workflow (`{ query, conversationHistory }`). Returns calibrated response, source references, and agent execution telemetry.
-- `GET /api/rag/stream` — Real-time Server-Sent Events (SSE) telemetry stream for the live 3D Agent Flow Visualizer.
+- `GET /api/rag/stream` — Real-time Server-Sent Events (SSE) telemetry stream for live agent execution and forensic tracing.
 
 ---
+
+## 🔭 LangSmith Observability & Tracing
+
+TraceMind provides deep enterprise observability by integrating **LangSmith** for distributed tracing, latency evaluation, and performance monitoring across all 8 agents in the forensic reasoning loop.
+
+### Tracing Architecture & Hierarchical Spans
+When `LANGSMITH_TRACING=true` and a valid `LANGSMITH_API_KEY` is configured, every user inquiry automatically creates a structured, hierarchical run tree in LangSmith:
+
+- **Root Investigation Span (`traceInvestigation`)**: Wraps the entire end-to-end investigation lifecycle. It captures high-level telemetry including total reasoning rounds executed, cumulative evidence chunks analyzed, final epistemic confidence scores, conflict status, and overall response time.
+- **Agent Execution Spans (`traceAgent`)**: Each of the 8 ADK agents (`Planner`, `Retrieval`, `Vision`, `Evidence`, `Conflict`, `Sufficiency`, `Follow-up`, and `Answer`) executes as a dedicated child span, logging its specific round number, inputs, and state updates.
+- **Dense Retrieval Spans (`traceRetrievalSpan`)**: Traces sub-operations such as Query Embedding generation, Qdrant Vector Nearest-Neighbor search, and similarity score ranking.
+- **LLM Inference Spans (`traceLlmCall`)**: Tracks all remote Ollama calls (`qwen3:14b`, `qwen3-vl:8b`), calculating estimated token metrics (prompt & completion tokens), measuring execution duration in milliseconds, and capturing error diagnostics if an inference fails.
+
+### Privacy-Preserving Payload Sanitization
+TraceMind enforces strict data privacy controls to prevent sensitive information or oversized payloads from polluting your LangSmith dashboard:
+- **Credential Redaction**: Sensitive attributes such as API keys, JWT tokens, authorization headers, and passwords are automatically scrubbed and replaced with `[REDACTED]`.
+- **Vector Truncation**: Dense 768-dimensional embedding vectors are summarized as `{ _type: 'embedding_vector', dimensions: 768, sample: [...] }` rather than logging massive float arrays.
+- **Binary & Image Buffer Truncation**: High-resolution image buffers and raw file bytes are replaced with concise length indicators (`[BINARY_BUFFER]`).
+- **Retrieval Chunk Summarization**: Raw chunks are sanitized to essential provenance metadata (filename, page number, similarity score) with text excerpts capped at 160 characters.
+
+### Enabling LangSmith
+1. Create a free account at [smith.langchain.com](https://smith.langchain.com/).
+2. Navigate to **Settings** > **API Keys** and generate an API key (`lsv2_pt_...`).
+3. Add the following to your `src/backend/.env` file:
+   ```env
+   LANGSMITH_TRACING=true
+   LANGSMITH_API_KEY=lsv2_pt_your_actual_api_key
+   LANGSMITH_PROJECT=TraceMind
+   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+   ```
+4. Trace sessions will now seamlessly populate under the **TraceMind** project in your LangSmith dashboard. If the API key is omitted or `LANGSMITH_TRACING=false`, the system gracefully operates in zero-overhead passthrough mode without making any external telemetry calls.
 
 ## 📂 Project Directory Structure
 
@@ -421,10 +464,13 @@ TraceMind/
     │   ├── middleware/                  # JWT auth & Multer upload middleware
     │   ├── models/                      # Mongoose schemas (User, Document, Log)
     │   ├── routes/                      # Express route definitions
+    │   ├── tests/                       # Unit & integration test suites
+    │   │   └── langsmith-tracing.test.js# LangSmith tracing & telemetry unit tests
     │   └── services/                    # Core business logic services
     │       ├── chunking.service.js      # Text & table token chunking
     │       ├── extractor.service.js     # PDF, DOCX, ZIP, Image text extractors
     │       ├── ingestion.service.js     # End-to-end document indexing pipeline
+    │       ├── langsmith.service.js     # LangSmith multi-agent tracing & sanitization
     │       ├── ollama.service.js        # Ollama API client & model manager
     │       ├── qwen.service.js          # Calibrated Qwen text reasoning service
     │       ├── qdrant.service.js        # Vector upsert & similarity search
@@ -443,7 +489,7 @@ TraceMind/
             ├── context/                 # AuthContext & InvestigationContext
             ├── pages/                   # ChatDashboard, Auth, Landing pages
             └── components/              # Modular UI Component Library
-                ├── chat/                # ChatInput, MessageList, AgentFlowModal
+                ├── chat/                # ChatInput, MessageList, InvestigationPanel
                 ├── documents/           # DocumentsView, UploadDropzone, FilePreview
                 ├── common/              # Buttons, Modals, Spinners, Toast alerts
                 └── Hero/                # Landing page hero & features showcase
@@ -462,7 +508,14 @@ cd src/backend
 node test_adk_evaluation_suite.js
 ```
 
-### 2. Verify Frontend Production Build
+### 2. Verify LangSmith Tracing & Sanitization
+Execute the automated LangSmith integration test suite (validates configuration detection, privacy redactions, vector array truncations, and span hierarchies):
+```bash
+cd src/backend
+node tests/langsmith-tracing.test.js
+```
+
+### 3. Verify Frontend Production Build
 Validate that the React application compiles cleanly without errors:
 ```bash
 npm run build:frontend
